@@ -570,9 +570,6 @@ export class PMRole {
     }
   }
 
-  // TODO: Consider using `claude --from-pr {pr_number}` for revisions instead
-  // of spawning a fresh developer. This resumes context from the PR, so the
-  // developer already knows the review feedback without re-reading everything.
   private async spawnRevisionDeveloper(payload: RevisionNeededPayload): Promise<void> {
     const config = this.deps.config.project;
 

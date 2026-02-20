@@ -49,17 +49,14 @@ export class DeveloperRole {
 
 ## REVISION MODE
 
-This is a revision of an existing PR #${prNumber}. The CTO has requested changes.
+This is a revision of existing PR #${prNumber}. The CTO has requested changes.
+You have been loaded with the full PR context via --from-pr.
 
-1. Checkout the existing PR branch: \`gh pr checkout ${prNumber}\`
-2. Read all review comments: \`gh pr view ${prNumber} --comments\`
-3. Read review details: \`gh pr view ${prNumber} --json reviews --jq '.reviews[].body'\`
-4. Address ALL requested changes from the most recent CTO review
-4. Run the project's test suite and fix any failures
-5. Push your fixes: \`git push\`
-6. Re-add the CTO review label: \`gh pr edit ${prNumber} --add-label "needs-cto-review"\`
-
-Do NOT create a new PR — push to the existing branch.`;
+1. You are already on the PR branch — do NOT create a new branch or PR
+2. Address ALL requested changes from the most recent CTO review
+3. Run the project's test suite and fix any failures
+4. Push your fixes: \`git push\`
+5. Re-add the CTO review label: \`gh pr edit ${prNumber} --add-label "needs-cto-review"\``;
   }
 
   async spawn(options: DeveloperSpawnOptions): Promise<string> {
@@ -73,14 +70,14 @@ Do NOT create a new PR — push to the existing branch.`;
 
     let command: string;
     if (options.prNumber) {
-      // Revision: skip -w flag. The developer will `gh pr checkout` to get
-      // the existing PR branch. Using -w would create a fresh worktree on
-      // main which conflicts with the revision flow.
-      command = `claude --permission-mode acceptEdits ${this.shellEscape(prompt)}`;
+      // Revision: use --from-pr to load PR context (diff, comments, reviews).
+      // Claude automatically checks out the PR branch and has full context
+      // of what needs fixing.
+      command = `claude --from-pr ${options.prNumber} --permission-mode acceptEdits ${this.shellEscape(prompt)}`;
     } else {
       // New work: use -w to create an isolated worktree.
-      const worktreeName = `issue-${options.issueNumber}`;
-      command = `claude -w ${worktreeName} --permission-mode acceptEdits ${this.shellEscape(prompt)}`;
+      // Let Claude Code generate the worktree name to avoid branch collisions.
+      command = `claude -w --permission-mode acceptEdits ${this.shellEscape(prompt)}`;
     }
 
     await this.tmux.createSession({

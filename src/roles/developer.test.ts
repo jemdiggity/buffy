@@ -58,8 +58,7 @@ describe("DeveloperRole", () => {
       });
       expect(prompt).toContain("REVISION MODE");
       expect(prompt).toContain("PR #10");
-      expect(prompt).toContain("gh pr checkout 10");
-      expect(prompt).toContain("gh pr view 10 --comments");
+      expect(prompt).toContain("--from-pr");
       expect(prompt).toContain('gh pr edit 10 --add-label "needs-cto-review"');
     });
 
