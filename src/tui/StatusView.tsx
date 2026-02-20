@@ -113,6 +113,8 @@ export function StatusView({ data }: StatusViewProps) {
         {/* Right column: Pipeline + PR list */}
         <Box flexDirection="column" width="50%">
           <Panel title="Pipeline">
+            <Text>Issues in queue:     {data.pmStatus?.issuesInQueue ?? 0}</Text>
+            <Text>Active developers:   {data.pmStatus?.activeDevelopers ?? 0}</Text>
             <Text>PRs awaiting CTO:    {data.pmStatus?.prsAwaitingCTO ?? 0}</Text>
             <Text>PRs awaiting human:  {data.pmStatus?.prsAwaitingHuman ?? 0}</Text>
           </Panel>

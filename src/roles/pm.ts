@@ -112,6 +112,10 @@ export class PMRole {
       this.logError("runCycle failed", err);
       this.status.state = "idle";
     }
+
+    // Always update counts from HR, regardless of early returns or errors above
+    this.status.activeDevelopers = this.deps.hr.getActiveSessions(this.getProjectName())
+      .filter((s) => s.role === "developer").length;
   }
 
   private async processMessages(): Promise<void> {
@@ -502,9 +506,6 @@ export class PMRole {
       this.log(`Assigning issue #${issue.number}: ${issue.title}`);
       await this.spawnDeveloper(issue.number);
     }
-
-    this.status.activeDevelopers = this.deps.hr.getActiveSessions(this.getProjectName())
-      .filter((s) => s.role === "developer").length;
   }
 
   private async spawnDeveloper(issueNumber: number, prNumber?: number): Promise<void> {
