@@ -39,18 +39,21 @@ export class WorktreeManager {
       // May fail if no remote, continue anyway
     }
 
-    // Create the worktree with a new branch from the base
-    await this.git.raw([
-      "worktree",
-      "add",
-      "-b",
-      branch,
-      path,
-      `origin/${baseBranch}`,
-    ]).catch(async () => {
-      // If origin/baseBranch doesn't exist, try local baseBranch
-      await this.git.raw(["worktree", "add", "-b", branch, path, baseBranch]);
-    });
+    // Check if branch already exists (from a previous run)
+    const branches = await this.git.branch();
+    const branchExists = branches.all.includes(branch);
+
+    if (branchExists) {
+      // Reuse existing branch
+      await this.git.raw(["worktree", "add", path, branch]);
+    } else {
+      // Create new branch from remote or local base
+      try {
+        await this.git.raw(["worktree", "add", "-b", branch, path, `origin/${baseBranch}`]);
+      } catch {
+        await this.git.raw(["worktree", "add", "-b", branch, path, baseBranch]);
+      }
+    }
 
     return { path, branch, issueNumber };
   }

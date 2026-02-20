@@ -20,6 +20,7 @@
       "Bash(git rev-parse:*)",
       "Bash(git remote:*)",
       "Bash(git worktree:*)",
+      "Bash(git -C:*)",
       "Bash(gh:*)",
       "Bash(cat:*)",
       "Bash(ls:*)",
