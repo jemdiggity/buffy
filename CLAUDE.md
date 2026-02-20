@@ -44,10 +44,9 @@ Human (CEO)
 - Monitors burn rate and projects weekly usage for night shift decisions
 
 **Developer** — Ephemeral Claude Code session in tmux. One per issue.
-- PM creates the git worktree and feature branch first
-- PM spawns `claude -p "..."` with cwd set to the worktree directory (Claude Code picks up the repo's CLAUDE.md and .claude/ config automatically)
-- The initial prompt tells the developer its issue number and any relevant context
-- Developer does the work autonomously (reads issue via `gh`, writes code, runs tests)
+- PM spawns `claude -w issue-{N} --permission-mode acceptEdits "prompt"` from the repo root
+- Claude Code's `--worktree` flag creates a worktree at `<repo>/.claude/worktrees/issue-{N}` and handles cleanup on clean exit
+- Developer creates its own feature branch, does the work autonomously (reads issue via `gh`, writes code, runs tests)
 - Opens a draft PR with label `needs-cto-review` when done
 - Session dies after PR is opened
 
@@ -68,7 +67,7 @@ GitHub issue exists in the repo
   → PM asks HR Manager: do we have capacity?
   → HR Manager checks: active sessions, budget, burn rate
   → If yes: PM spawns a Developer session
-  → Developer: creates worktree, codes, runs tests, opens draft PR
+  → Developer: creates feature branch, codes, runs tests, opens draft PR
   → Developer session dies
   → CTO picks up the draft PR, reviews the diff
   → CTO either:
@@ -115,7 +114,7 @@ This is what makes Max 20x actually worth $200/month — the robots work while y
 - **Claude Code:** All roles spawned via `claude` CLI in tmux (bills against Max subscription via OAuth). The SDK (`@anthropic-ai/claude-code`) is NOT used for spawning — it requires API key auth and bills separately from Max.
 - **Runtime:** Node.js with tsx for development
 - **GitHub:** `gh` CLI for all GitHub operations. Per-project auth via `GH_TOKEN` environment variable injected into each tmux session (avoids global `gh auth switch` races between concurrent projects)
-- **Git:** simple-git for worktree management
+- **Git:** simple-git for worktree discovery and cleanup (Claude Code's `-w` flag handles worktree creation)
 - **Process management:** tmux for all Claude sessions. Each gets a named session: `buffy-{project}-pm`, `buffy-{project}-cto`, `buffy-{project}-dev-{issue}`
 - **State:** better-sqlite3 — per-project `.buffy/state.db` for comms bus, global `~/.config/buffy/hr.db` for HR budget tracking across projects
 - **Dashboard server:** Hono (lightweight, fast, no bloat)
@@ -151,7 +150,7 @@ buffy/                             # The npm package
 │   │   ├── db.ts                  # SQLite schema and queries (local + global)
 │   │   └── types.ts               # Budget, SessionSnapshot, etc.
 │   ├── git/
-│   │   ├── worktree.ts            # Create/destroy worktrees per developer
+│   │   ├── worktree.ts            # Worktree discovery, cleanup, path helpers (creation via Claude -w flag)
 │   │   └── pr.ts                  # PR creation, status checking
 │   ├── github/
 │   │   ├── issues.ts              # Fetch and filter issues
@@ -226,10 +225,6 @@ max_prs_awaiting_human = 3
 
 [dashboard]
 port = 3000
-
-[worktrees]
-directory = "../.buffy-worktrees"  # Relative to repo root
-cleanup_stale_hours = 24
 
 [night_shift]
 enabled = false
@@ -394,11 +389,11 @@ The dashboard is a vanilla web app served by Hono:
 
 ### 1. How developers receive instructions
 
-The PM creates the git worktree and feature branch, then spawns `claude -p "..."` with cwd set to the worktree directory. Claude Code automatically picks up the repo's `CLAUDE.md` and `.claude/` config from the worktree. The initial prompt tells the developer its issue number; it uses `gh issue view` to get full context. This works well with Claude Code's permission model since it's running inside a proper repo checkout.
+The PM spawns `claude -w issue-{N} --permission-mode acceptEdits "prompt"` from the repo root. Claude Code's `--worktree` flag creates a worktree at `<repo>/.claude/worktrees/issue-{N}`, branching from the default remote branch. Claude Code automatically picks up the repo's `CLAUDE.md` and `.claude/` config from the worktree. The initial prompt tells the developer its issue number; it uses `gh issue view` to get full context. The developer creates its own feature branch within the worktree — the branch name is Claude's choice, discovered later by the PM via `git rev-parse --abbrev-ref HEAD` for PR detection and cleanup.
 
 ### 2. Claude CLI in tmux (not the SDK)
 
-**tmux + `claude` CLI is the only option for Max plan users.** The Claude Agent SDK requires API key authentication and bills against API credits, not your Max subscription. Only the `claude` CLI authenticates via OAuth and bills against Max quota. All roles are spawned by running `claude -p "..."` inside named tmux sessions. This preserves full attachability for debugging and ensures everything bills against a single Max subscription.
+**tmux + `claude` CLI is the only option for Max plan users.** The Claude Agent SDK requires API key authentication and bills against API credits, not your Max subscription. Only the `claude` CLI authenticates via OAuth and bills against Max quota. All roles are spawned by running `claude` inside named tmux sessions (developers use `claude -w` for worktree management, other roles use `claude -p`). This preserves full attachability for debugging and ensures everything bills against a single Max subscription.
 
 ### 3. CTO "request changes" loop
 
@@ -424,15 +419,15 @@ CTO polls GitHub on its interval: `gh pr list --label needs-cto-review`. Simple,
 
 **Important: Max plan and the SDK.** The Claude Agent SDK (`@anthropic-ai/claude-code`) requires API key authentication and does NOT bill against your Max subscription. Only the `claude` CLI uses Max quota via OAuth. This is why Buffy uses tmux + `claude` CLI for all roles — everything bills against your Max plan. Do not use the SDK for spawning sessions unless you want separate API charges.
 
-### 6. Branch naming and cleanup
+### 6. Worktrees and cleanup
 
-**Naming convention:** `buffy/issue-{number}` (e.g., `buffy/issue-142`)
-- Worktree directory: `../.buffy-worktrees/issue-{number}` (sibling to main repo, hidden)
+**Worktree path:** `<repo>/.claude/worktrees/issue-{number}` (managed by Claude Code's `-w` flag)
+- Branch naming is Claude's choice within the worktree (e.g., `fix/issue-142`, `feat/add-auth`)
+- PM discovers the branch via `git rev-parse --abbrev-ref HEAD` in the worktree directory
 
-**Cleanup:** PM handles all cleanup:
-- PR merged → PM deletes worktree and branch on next poll cycle
-- PR closed without merge → same cleanup
-- Stale worktrees (no activity for configurable hours, no open PR) → PM garbage collects on startup
+**Cleanup:** Claude Code auto-cleans worktrees on clean session exit. PM handles remaining cleanup:
+- Dead session with worktree still on disk → PM removes worktree and branch
+- PR merged/closed → PM removes worktree and branch on next poll cycle
 - `buffy --stop --clean` → remove all worktrees
 
 ### 7. Multi-project support
@@ -442,7 +437,7 @@ Buffy supports multiple projects running simultaneously:
 **Per-project (lives in each repo):**
 - `buffy.toml` — project config (issues, labels, backpressure thresholds)
 - `.buffy/state.db` — SQLite for comms bus and project-level state
-- Worktrees in `../.buffy-worktrees/`
+- Worktrees in `.claude/worktrees/` (managed by Claude Code's `-w` flag)
 
 **Global (shared across all projects):**
 - `~/.config/buffy/config.toml` — global settings (API budget cap, global session limit)
@@ -460,7 +455,7 @@ Buffy supports multiple projects running simultaneously:
 - Use `bun build --compile` to produce standalone binaries per platform (macOS arm64/x64, Linux x64/arm64)
 - The CLI entry point parses flags (--status, --stop, etc.) for fire-and-forget mode, otherwise launches the Ink TUI
 - All tmux operations are just shelling out to the `tmux` CLI via execa
-- PM creates the worktree, then spawns `claude -p "..."` inside a new tmux session with cwd set to the worktree. Claude Code picks up the repo's CLAUDE.md and .claude/ config automatically.
+- PM spawns `claude -w issue-{N} --permission-mode acceptEdits "prompt"` in a new tmux session with cwd set to the repo root. Claude Code's `-w` flag creates the worktree and picks up the repo's CLAUDE.md and .claude/ config automatically.
 - All Claude sessions use the `claude` CLI (not the SDK) to bill against Max subscription
 - Each tmux session gets `GH_TOKEN` injected from the project config so `gh` commands authenticate to the correct GitHub account
 - The dashboard WebSocket server runs on the same Hono instance as the static file server
@@ -470,7 +465,7 @@ Buffy supports multiple projects running simultaneously:
 
 ### Testing Buffy itself
 
-- **Unit tests:** HR Manager (budget math, capacity checks, multi-project accounting), tmux module (session naming, create/destroy), git module (worktree paths, branch naming), comms bus (message routing, polling), config parsing (TOML → typed config)
+- **Unit tests:** HR Manager (budget math, capacity checks, multi-project accounting), tmux module (session naming, create/destroy), git module (worktree paths, branch discovery, cleanup), comms bus (message routing, polling), config parsing (TOML → typed config)
 - **Integration tests:** Use a test repo. Spawn a developer, verify worktree created, branch exists, PR opened with correct labels. Test PM → HR → Developer flow end-to-end. Test CTO rejection → new developer cycle.
 - **Dry-run mode:** `buffy --dry-run` logs what it would do without spawning sessions or touching GitHub. Useful for validating config and prompt changes.
 - **Test framework:** vitest (fast, TypeScript-native, good for both unit and integration)
@@ -483,7 +478,7 @@ The developer prompt instructs Claude Code to run the project's test suite befor
 
 1. **HR Manager module** — budget tracking, capacity checks, SQLite setup
 2. **Tmux module** — create, list, attach, destroy named sessions
-3. **Git module** — create/destroy worktrees, branch naming
+3. **Git module** — worktree path helpers, branch discovery, cleanup
 4. **Developer role** — spawn a Claude Code session in a worktree for a single issue, open a PR when done
 5. **PM role** — fetch issues, check capacity, label issues, spawn developers, cleanup
 6. **TUI** — main status view with Ink, keybindings, session attach picker
