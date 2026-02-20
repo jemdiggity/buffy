@@ -9,21 +9,24 @@ import type { TmuxManager } from "../tmux/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+import type { NightShiftScheduler } from "../nightshift/index.js";
+
 export interface DashboardOptions {
   port: number;
   pm: PMRole;
   hr: HRManager;
   tmux: TmuxManager;
   projectName: string;
+  nightShift?: NightShiftScheduler;
 }
 
 export function startDashboard(options: DashboardOptions): { close: () => void } {
-  const { port, pm, hr, tmux, projectName } = options;
+  const { port, pm, hr, tmux, projectName, nightShift } = options;
   const app = new Hono();
   const publicDir = join(__dirname, "public");
 
   // API: status
-  app.get("/api/status", (c) => {
+  app.get("/api/status", async (c) => {
     const pmStatus = pm.getStatus();
     const budget = hr.getBudgetSnapshot();
     const developers = hr.getActiveSessions(projectName)
@@ -34,11 +37,21 @@ export function startDashboard(options: DashboardOptions): { close: () => void }
         startedAt: s.started_at,
       }));
 
+    let nightShiftState;
+    if (nightShift) {
+      try {
+        nightShiftState = await nightShift.getState();
+      } catch {
+        // Non-fatal
+      }
+    }
+
     return c.json({
       projectName,
       pm: pmStatus,
       budget,
       developers,
+      nightShift: nightShiftState ?? null,
     });
   });
 

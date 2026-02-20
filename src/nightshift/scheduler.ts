@@ -2,6 +2,8 @@ import type { NightShiftSection } from "../config/index.js";
 import type { WeeklyUsageTracker } from "./usage.js";
 import type { NightShiftState, NightShiftSpawnDecision } from "./types.js";
 
+const FIVE_HOUR_BACKPRESSURE_THRESHOLD = 80;
+
 export class NightShiftScheduler {
   private config: NightShiftSection;
   private usage: WeeklyUsageTracker;
@@ -32,7 +34,7 @@ export class NightShiftScheduler {
     }
   }
 
-  shouldSpawn(): NightShiftSpawnDecision {
+  async shouldSpawn(): Promise<NightShiftSpawnDecision> {
     if (!this.config.enabled) {
       return { allowed: false, maxConcurrent: 0, reason: "Night shift disabled" };
     }
@@ -41,8 +43,17 @@ export class NightShiftScheduler {
       return { allowed: false, maxConcurrent: 0, reason: "Outside night shift window" };
     }
 
-    const snapshot = this.usage.getSnapshot();
+    const snapshot = await this.usage.getSnapshot();
     const weekElapsedPercent = this.getWeekElapsedPercent();
+
+    // 5-hour backpressure: block if short-term usage is too high
+    if (snapshot.fiveHourUtilization != null && snapshot.fiveHourUtilization > FIVE_HOUR_BACKPRESSURE_THRESHOLD) {
+      return {
+        allowed: false,
+        maxConcurrent: 0,
+        reason: `5-hour utilization (${snapshot.fiveHourUtilization.toFixed(1)}%) > ${FIVE_HOUR_BACKPRESSURE_THRESHOLD}%`,
+      };
+    }
 
     // If usage is ahead of time, no headroom
     if (snapshot.usagePercent >= weekElapsedPercent) {
@@ -70,16 +81,16 @@ export class NightShiftScheduler {
     };
   }
 
-  getState(): NightShiftState {
+  async getState(): Promise<NightShiftState> {
     const now = this.clock();
     const windowOpen = this.isInWindow(now);
-    const snapshot = this.usage.getSnapshot();
+    const snapshot = await this.usage.getSnapshot();
     const weekElapsedPercent = this.getWeekElapsedPercent();
     const headroomPercent = Math.max(0, weekElapsedPercent - snapshot.usagePercent);
     const safetyThreshold = 100 - this.config.safety_margin_percent;
     const throttled = snapshot.usagePercent >= safetyThreshold;
 
-    const decision = this.shouldSpawn();
+    const decision = await this.shouldSpawn();
 
     return {
       active: decision.allowed,
@@ -91,6 +102,8 @@ export class NightShiftScheduler {
       reason: decision.reason,
       nextWindowStart: this.formatNextWindow(now, this.config.start_hour),
       nextWindowEnd: this.formatNextWindow(now, this.config.end_hour),
+      usageSource: snapshot.source,
+      fiveHourUtilization: snapshot.fiveHourUtilization,
     };
   }
 

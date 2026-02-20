@@ -8,12 +8,16 @@ export interface NightShiftState {
   reason: string;
   nextWindowStart?: string;
   nextWindowEnd?: string;
+  usageSource: "api" | "estimated";
+  fiveHourUtilization?: number;
 }
 
 export interface UsageSnapshot {
   totalSessionMinutes: number;
   weeklyLimit: number;
   usagePercent: number;
+  source: "api" | "estimated";
+  fiveHourUtilization?: number;
 }
 
 export interface NightShiftSpawnDecision {

@@ -70,7 +70,7 @@ export function App({ pm, hr, tmux, prs, projectName, dashboardPort, nightShift,
       }
       setApprovedPRs(approved);
 
-      const nightShiftState = nightShift ? nightShift.getState() : undefined;
+      const nightShiftState = nightShift ? await nightShift.getState() : undefined;
 
       setStatusData({
         projectName,
@@ -90,6 +90,8 @@ export function App({ pm, hr, tmux, prs, projectName, dashboardPort, nightShift,
           throttled: nightShiftState.throttled,
           reason: nightShiftState.reason,
           nextWindowStart: nightShiftState.nextWindowStart,
+          usageSource: nightShiftState.usageSource,
+          fiveHourUtilization: nightShiftState.fiveHourUtilization,
         } : undefined,
       });
     };

@@ -106,11 +106,13 @@ Max plan usage resets on a weekly rolling window. If the PM detects that the cur
 ```
 Night shift logic:
   1. Is it within the configured night shift window? (e.g., 1am–6am)
-  2. Check weekly usage via /usage — what % of the weekly limit is consumed?
+  2. Fetch real usage from Anthropic OAuth API (7-day + 5-hour utilization %)
+     Falls back to session-minutes estimation if API unavailable
   3. What % of the week has elapsed?
-  4. If usage_percent < elapsed_percent (i.e., headroom exists), spawn developers
-  5. Throttle spawning to stay under projected weekly cap
-  6. Stop if usage approaches the configured safety margin
+  4. If 5-hour utilization > 80%, block (short-term backpressure)
+  5. If weekly usage_percent < elapsed_percent (i.e., headroom exists), spawn developers
+  6. Throttle spawning to stay under projected weekly cap
+  7. Stop if usage approaches the configured safety margin
 ```
 
 This is what makes Max 20x actually worth $200/month — the robots work while you sleep, burning quota that would otherwise go to waste. Configurable via the `[night_shift]` section in `buffy.toml`.
@@ -179,8 +181,13 @@ buffy/                             # The npm package
 │   │       └── app.js             # Vanilla JS: poll /api/status, render DOM
 │   ├── nightshift/
 │   │   ├── types.ts               # NightShiftState, UsageSnapshot, SpawnDecision
-│   │   ├── usage.ts               # WeeklyUsageTracker: queries HR SQLite for session-minutes
+│   │   ├── usage.ts               # WeeklyUsageTracker: real API data + session-minutes fallback
 │   │   ├── scheduler.ts           # NightShiftScheduler: window check, headroom, spawn decision
+│   │   └── index.ts               # Barrel export
+│   ├── usage/
+│   │   ├── types.ts               # UsageWindow, ClaudeUsageData (API response types)
+│   │   ├── credentials.ts         # OAuth token retrieval (Keychain, file, env var)
+│   │   ├── client.ts              # UsageClient: fetch from Anthropic OAuth API with caching
 │   │   └── index.ts               # Barrel export
 │   └── config/
 │       ├── schema.ts              # TOML config types (local + global)
@@ -430,9 +437,11 @@ The PM discovers PRs needing review: `gh pr list --label needs-cto-review`. When
 
 ### 5. Token tracking
 
-**MVP:** Track session count and wall-clock duration only. Estimate costs based on average cost-per-minute (configurable in `buffy.toml`). This is good enough for backpressure and budget guardrails.
+**Real usage data via OAuth API:** Buffy fetches actual utilization percentages from `GET https://api.anthropic.com/api/oauth/usage` using Claude Code's stored OAuth credentials. This returns 5-hour and 7-day rolling window utilization as percentages (0-100). The `src/usage/` module handles credential retrieval (macOS Keychain, `~/.claude/.credentials.json`, or `CLAUDE_CODE_OAUTH_TOKEN` env var), API calls with caching (60s TTL), and 401 retry with token refresh.
 
-**Future:** Parse output from `/usage` command inside Claude Code sessions. This gives direct usage data. Could be scraped from tmux scrollback after injecting the command, but fragile. Per-session token tracking deferred until a clean mechanism is available.
+**Night shift uses real data:** The 7-day utilization drives night shift headroom calculations (replacing the session-minutes estimation). The 5-hour utilization acts as an additional backpressure signal — if > 80%, spawning is blocked regardless of weekly headroom. The TUI and dashboard show whether data comes from "API" or "estimated" (fallback).
+
+**Fallback:** If the API is unreachable or credentials are unavailable, the system falls back to session-minutes estimation from HR's SQLite (wall-clock duration × cost-per-minute). The `UsageSnapshot.source` field ("api" | "estimated") tells callers which data they got.
 
 **Important: Max plan and the SDK.** The Claude Agent SDK (`@anthropic-ai/claude-code`) requires API key authentication and does NOT bill against your Max subscription. Only the `claude` CLI uses Max quota via OAuth. This is why Buffy uses tmux + `claude` CLI for all roles — everything bills against your Max plan. Do not use the SDK for spawning sessions unless you want separate API charges.
 

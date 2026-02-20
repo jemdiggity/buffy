@@ -21,6 +21,8 @@ export interface PMStatus {
   ctoRunning: boolean;
   ctoReviewing: number[];
   errors: string[];
+  fiveHourUsage?: number;
+  usageSource?: "api" | "estimated";
 }
 
 export interface PMDependencies {
@@ -435,7 +437,7 @@ export class PMRole {
     // Check night shift for elevated concurrency
     let spawnOverrides: { maxProjectSessions?: number } | undefined;
     if (this.deps.nightShift) {
-      const decision = this.deps.nightShift.shouldSpawn();
+      const decision = await this.deps.nightShift.shouldSpawn();
       if (decision.allowed) {
         this.log(`Night shift active: ${decision.reason} (max concurrent: ${decision.maxConcurrent})`);
         spawnOverrides = { maxProjectSessions: decision.maxConcurrent };

@@ -1,22 +1,51 @@
 import type Database from "better-sqlite3";
 import type { UsageSnapshot } from "./types.js";
+import type { UsageClient } from "../usage/index.js";
 
 export class WeeklyUsageTracker {
   private db: Database.Database;
   private weeklyLimit: number;
+  private usageClient?: UsageClient;
 
-  constructor(db: Database.Database, weeklySessionMinutesLimit: number) {
+  constructor(
+    db: Database.Database,
+    weeklySessionMinutesLimit: number,
+    usageClient?: UsageClient
+  ) {
     this.db = db;
     this.weeklyLimit = weeklySessionMinutesLimit;
+    this.usageClient = usageClient;
   }
 
-  getSnapshot(): UsageSnapshot {
+  async getSnapshot(): Promise<UsageSnapshot> {
+    // Try real API data first
+    if (this.usageClient) {
+      const apiData = await this.usageClient.fetchUsage();
+      if (apiData) {
+        return {
+          totalSessionMinutes: this.getTotalSessionMinutes(),
+          weeklyLimit: this.weeklyLimit,
+          usagePercent: apiData.sevenDayOpus.utilization,
+          source: "api",
+          fiveHourUtilization: apiData.fiveHour.utilization,
+        };
+      }
+    }
+
+    // Fall back to session-minutes estimation
     const totalMinutes = this.getTotalSessionMinutes();
     return {
       totalSessionMinutes: totalMinutes,
       weeklyLimit: this.weeklyLimit,
       usagePercent: this.weeklyLimit > 0 ? (totalMinutes / this.weeklyLimit) * 100 : 0,
+      source: "estimated",
     };
+  }
+
+  async getRealUsagePercent(): Promise<number | null> {
+    if (!this.usageClient) return null;
+    const data = await this.usageClient.fetchUsage();
+    return data?.sevenDayOpus.utilization ?? null;
   }
 
   private getTotalSessionMinutes(): number {

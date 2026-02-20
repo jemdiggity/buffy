@@ -5,6 +5,7 @@ async function fetchStatus() {
     renderRoles(data);
     renderPipeline(data);
     renderBudget(data);
+    renderNightShift(data);
   } catch (err) {
     console.error("Failed to fetch status:", err);
   }
@@ -95,6 +96,45 @@ function renderBudget(data) {
       <span class="stat-value">$${b.burnRatePerMinute.toFixed(2)}/min</span>
     </div>
   `;
+}
+
+function renderNightShift(data) {
+  const el = document.getElementById("night-shift");
+  if (!el) return;
+  const ns = data.nightShift;
+  if (!ns) {
+    el.innerHTML = '<span class="stat-label">Disabled</span>';
+    return;
+  }
+  const sourceLabel = ns.usageSource === "api" ? "API" : "estimated";
+  let html = `
+    <div class="stat-row">
+      <span class="stat-label">Status</span>
+      <span class="stat-value">${ns.active ? "active" : ns.windowOpen ? "window open" : "idle"}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Weekly usage</span>
+      <span class="stat-value">${ns.weeklyUsagePercent.toFixed(1)}% (${sourceLabel})</span>
+    </div>
+  `;
+  if (ns.fiveHourUtilization != null) {
+    html += `
+    <div class="stat-row">
+      <span class="stat-label">5-hour usage</span>
+      <span class="stat-value">${ns.fiveHourUtilization.toFixed(1)}%</span>
+    </div>
+    `;
+  }
+  html += `
+    <div class="stat-row">
+      <span class="stat-label">Headroom</span>
+      <span class="stat-value">${ns.headroomPercent.toFixed(1)}%</span>
+    </div>
+  `;
+  if (ns.throttled) {
+    html += `<div class="stat-row"><span class="stat-label" style="color: #e0af68">Throttled: approaching safety margin</span></div>`;
+  }
+  el.innerHTML = html;
 }
 
 function renderSessions(sessions) {

@@ -18,6 +18,7 @@ import { CTORole } from "./roles/cto.js";
 import { PMRole } from "./roles/pm.js";
 import { startDashboard } from "./dashboard/index.js";
 import { WeeklyUsageTracker, NightShiftScheduler } from "./nightshift/index.js";
+import { UsageClient } from "./usage/index.js";
 
 const VERSION = "0.1.0";
 
@@ -84,12 +85,16 @@ async function main() {
   const developer = new DeveloperRole(tmux);
   const cto = new CTORole(tmux);
 
+  // Usage client (attempts real API data, falls back gracefully)
+  const usageClient = new UsageClient();
+
   // Night shift (optional)
   let nightShift: NightShiftScheduler | undefined;
   if (config.project.night_shift.enabled) {
     const usageTracker = new WeeklyUsageTracker(
       globalDb,
-      config.project.night_shift.weekly_session_minutes_limit
+      config.project.night_shift.weekly_session_minutes_limit,
+      usageClient
     );
     nightShift = new NightShiftScheduler(config.project.night_shift, usageTracker);
   }
@@ -117,6 +122,7 @@ async function main() {
     hr,
     tmux,
     projectName,
+    nightShift,
   });
 
   // Start the PM loop

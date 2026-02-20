@@ -14,6 +14,8 @@ export interface NightShiftDisplayState {
   throttled: boolean;
   reason: string;
   nextWindowStart?: string;
+  usageSource?: "api" | "estimated";
+  fiveHourUtilization?: number;
 }
 
 export interface StatusData {
@@ -88,7 +90,13 @@ export function StatusView({ data }: StatusViewProps) {
               </Text>
               <Text>
                 Weekly usage: {data.nightShift.weeklyUsagePercent.toFixed(1)}%
+                {data.nightShift.usageSource ? ` (${data.nightShift.usageSource === "api" ? "API" : "estimated"})` : ""}
               </Text>
+              {data.nightShift.fiveHourUtilization != null && (
+                <Text>
+                  5-hour usage: {data.nightShift.fiveHourUtilization.toFixed(1)}%
+                </Text>
+              )}
               <Text>
                 Headroom: {data.nightShift.headroomPercent.toFixed(1)}%
               </Text>
