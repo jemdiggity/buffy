@@ -60,12 +60,9 @@ export class CTORole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.repoRoot,
-      command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
+      command: `claude -p --permission-mode acceptEdits "$(cat ${promptFile})"`,
       env,
     });
-
-    // Auto-accept the workspace trust prompt
-    await this.tmux.autoAcceptTrust(sessionName);
 
     return sessionName;
   }
@@ -102,6 +99,8 @@ gh pr edit <number> --remove-label "needs-cto-review" --add-label "cto-approved"
 ### If changes are needed:
 \`\`\`sh
 gh pr review <number> --request-changes --body "CTO Review: Changes needed.\\n\\n<feedback>"
-\`\`\``;
+\`\`\`
+
+Review ALL PRs listed above. Do NOT take any actions beyond reviewing. When all reviews are posted, you are done.`;
   }
 }

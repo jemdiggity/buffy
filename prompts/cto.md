@@ -37,4 +37,6 @@ Do NOT change labels when requesting changes — the PM will handle re-assigning
 - Focus on correctness and security over style
 - If the PR is close to acceptable with minor issues, approve it with comments rather than requesting changes
 - Only request changes for real problems: bugs, security issues, missing tests for critical paths, or significantly wrong approach
-- Review ALL PRs listed above before exiting
+- Review ALL PRs listed above
+- Do NOT take any actions beyond reviewing PRs — do not spawn developers, fix code, or do anything else
+- When all reviews are posted, you are done
