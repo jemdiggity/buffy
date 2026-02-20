@@ -78,7 +78,8 @@ function renderPipeline(data) {
 function renderBudget(data) {
   const el = document.getElementById("budget");
   const b = data.budget;
-  el.innerHTML = `
+  const sourceLabel = b.burnRateSource === "api" ? "API" : "estimated";
+  let html = `
     <div class="stat-row">
       <span class="stat-label">Project sessions</span>
       <span class="stat-value">${b.activeProjectSessions}/${b.maxProjectSessions}</span>
@@ -93,9 +94,18 @@ function renderBudget(data) {
     </div>
     <div class="stat-row">
       <span class="stat-label">Burn rate</span>
-      <span class="stat-value">$${b.burnRatePerMinute.toFixed(2)}/min</span>
+      <span class="stat-value">$${b.burnRatePerMinute.toFixed(2)}/min (${sourceLabel})</span>
     </div>
   `;
+  if (b.estimatedMonthlyCostUsd != null) {
+    html += `
+    <div class="stat-row">
+      <span class="stat-label">Monthly est.</span>
+      <span class="stat-value">$${b.estimatedMonthlyCostUsd.toFixed(0)}/$${b.planPriceUsd}</span>
+    </div>
+    `;
+  }
+  el.innerHTML = html;
 }
 
 function renderNightShift(data) {

@@ -27,4 +27,15 @@ export interface BudgetSnapshot {
   estimatedDailyCostUsd: number;
   maxDailyCostUsd: number;
   burnRatePerMinute: number;
+  estimatedMonthlyCostUsd?: number;
+  burnRateSource: "api" | "estimated";
+  planPriceUsd: number;
+}
+
+export interface UsageSnapshotRecord {
+  id?: number;
+  timestamp: string;
+  five_hour_utilization: number;
+  seven_day_utilization: number;
+  source: string;
 }

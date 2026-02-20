@@ -21,6 +21,7 @@ export interface CTOSection {
 export interface HRSection {
   max_concurrent_sessions: number;
   estimated_cost_per_minute: number;
+  plan_price_usd: number;
 }
 
 export interface BackpressureSection {

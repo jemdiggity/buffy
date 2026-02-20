@@ -21,6 +21,18 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(ended_at) WHERE ended
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
 `;
 
+const USAGE_SNAPSHOTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS usage_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp TEXT NOT NULL,
+  five_hour_utilization REAL NOT NULL,
+  seven_day_utilization REAL NOT NULL,
+  source TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_snapshots_ts ON usage_snapshots(timestamp);
+`;
+
 function ensureDir(filePath: string): void {
   const dir = dirname(filePath);
   if (!existsSync(dir)) {
@@ -34,6 +46,7 @@ export function openGlobalDb(dbPath?: string): Database {
   const db = new Database(path);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SESSIONS_SCHEMA);
+  db.exec(USAGE_SNAPSHOTS_SCHEMA);
   return db;
 }
 
