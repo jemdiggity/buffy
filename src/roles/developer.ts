@@ -60,9 +60,14 @@ export class DeveloperRole {
       // Interactive mode (no -p flag) so the session is attachable via tmux.
       // Permission prompts are visible and answerable if a human attaches.
       // .claude/settings.json pre-approves common tools automatically.
-      // TODO: Consider --permission-prompt-tool to handle permission prompts
-      // via an MCP tool instead of autoAcceptTrust + acceptEdits. Would also
-      // allow using -p (non-interactive) mode for fully autonomous sessions.
+      //
+      // TODO: Consider these Claude Code flags to simplify the spawn flow:
+      //   --worktree, -w  — Claude creates its own worktree, removing the need
+      //     for WorktreeManager.createWorktree entirely. E.g. `claude -w issue-14`.
+      //     Worktrees go to <repo>/.claude/worktrees/<name>.
+      //   --permission-prompt-tool — handle permission prompts via MCP tool
+      //     instead of autoAcceptTrust + acceptEdits. Enables -p mode.
+      //   --from-pr <number> — resume context from a PR (useful for revisions).
       command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
       env,
     });
