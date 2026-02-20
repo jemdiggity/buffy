@@ -1,0 +1,28 @@
+import React from "react";
+import { Box, Text } from "ink";
+import Spinner from "ink-spinner";
+
+interface RoleStatusProps {
+  name: string;
+  status: string;
+  active?: boolean;
+}
+
+export function RoleStatus({ name, status, active }: RoleStatusProps) {
+  return (
+    <Box gap={1}>
+      <Text color={active ? "green" : "gray"}>{active ? "\u25cf" : "\u25cb"}</Text>
+      <Text bold>{name}</Text>
+      <Text color="gray">
+        {active ? (
+          <Box>
+            <Spinner type="dots" />
+            <Text> {status}</Text>
+          </Box>
+        ) : (
+          status
+        )}
+      </Text>
+    </Box>
+  );
+}

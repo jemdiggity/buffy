@@ -1,0 +1,43 @@
+{
+  "name": "buffy",
+  "version": "0.1.0",
+  "description": "AI Software Development Team Orchestrator — manages a team of Claude Code instances like a software company",
+  "type": "module",
+  "bin": {
+    "buffy": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile buffy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "claude",
+    "ai",
+    "orchestrator",
+    "github",
+    "automation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "execa": "^9.6.1",
+    "ink": "^6.8.0",
+    "ink-spinner": "^5.0.0",
+    "react": "^19.2.4",
+    "simple-git": "^3.31.1",
+    "smol-toml": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

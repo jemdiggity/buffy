@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.buffy/
+*.db
+*.db-wal
+*.db-shm
+buffy
+.DS_Store
