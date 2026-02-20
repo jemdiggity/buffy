@@ -55,7 +55,10 @@ export class DeveloperRole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.worktreePath,
-      command: `claude -p "$(cat ${promptFile})"`,
+      // Interactive mode (no -p flag) so the session is attachable via tmux.
+      // Permission prompts are visible and answerable if a human attaches.
+      // .claude/settings.json pre-approves common tools automatically.
+      command: `claude "$(cat ${promptFile})"`,
       env,
     });
 

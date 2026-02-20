@@ -61,7 +61,7 @@ export class CTORole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.cwd,
-      command: `claude -p "$(cat ${promptFile})"`,
+      command: `claude "$(cat ${promptFile})"`,
       env,
     });
 
