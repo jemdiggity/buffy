@@ -1,14 +1,14 @@
-import type Database from "better-sqlite3";
+import type { Database } from "bun:sqlite";
 import type { UsageSnapshot } from "./types.js";
 import type { UsageClient } from "../usage/index.js";
 
 export class WeeklyUsageTracker {
-  private db: Database.Database;
+  private db: Database;
   private weeklyLimit: number;
   private usageClient?: UsageClient;
 
   constructor(
-    db: Database.Database,
+    db: Database,
     weeklySessionMinutesLimit: number,
     usageClient?: UsageClient
   ) {

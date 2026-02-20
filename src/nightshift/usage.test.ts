@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { WeeklyUsageTracker } from "./usage.js";
 import type { UsageClient, ClaudeUsageData } from "../usage/index.js";
 
-function createTestDb(): Database.Database {
+function createTestDb(): Database {
   const db = new Database(":memory:");
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (

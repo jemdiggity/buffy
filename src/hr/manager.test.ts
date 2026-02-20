@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { HRManager } from "./manager.js";
 
 // Use in-memory SQLite for tests
-function createTestDb(): Database.Database {
+function createTestDb(): Database {
   const db = new Database(":memory:");
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -25,7 +25,7 @@ function createTestDb(): Database.Database {
 }
 
 describe("HRManager", () => {
-  let db: Database.Database;
+  let db: Database;
   let hr: HRManager;
 
   beforeEach(() => {

@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { PMRole } from "./pm.js";
 import type { PMDependencies } from "./pm.js";
 import { HRManager } from "../hr/manager.js";
 import { CommsBus } from "../comms/bus.js";
 import { DEFAULT_PROJECT_CONFIG, DEFAULT_GLOBAL_CONFIG } from "../config/defaults.js";
 
-function createTestDb(): Database.Database {
+function createTestDb(): Database {
   const db = new Database(":memory:");
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (

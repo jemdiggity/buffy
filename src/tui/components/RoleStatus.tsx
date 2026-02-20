@@ -13,16 +13,14 @@ export function RoleStatus({ name, status, active }: RoleStatusProps) {
     <Box gap={1}>
       <Text color={active ? "green" : "gray"}>{active ? "\u25cf" : "\u25cb"}</Text>
       <Text bold>{name}</Text>
-      <Text color="gray">
-        {active ? (
-          <Box>
-            <Spinner type="dots" />
-            <Text> {status}</Text>
-          </Box>
-        ) : (
-          status
-        )}
-      </Text>
+      {active ? (
+        <Box>
+          <Text color="gray"><Spinner type="dots" /></Text>
+          <Text color="gray"> {status}</Text>
+        </Box>
+      ) : (
+        <Text color="gray">{status}</Text>
+      )}
     </Box>
   );
 }

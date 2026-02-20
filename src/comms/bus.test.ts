@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { CommsBus } from "./bus.js";
 
-function createTestDb(): Database.Database {
+function createTestDb(): Database {
   return new Database(":memory:");
 }
 
 describe("CommsBus", () => {
-  let db: Database.Database;
+  let db: Database;
   let bus: CommsBus;
 
   beforeEach(() => {

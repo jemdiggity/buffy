@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { Database } from "bun:sqlite";
 import type { SessionRecord, CapacityCheck, BudgetSnapshot } from "./types.js";
 
 export interface HRManagerOptions {
@@ -10,10 +10,10 @@ export interface HRManagerOptions {
 }
 
 export class HRManager {
-  private db: Database.Database;
+  private db: Database;
   private options: HRManagerOptions;
 
-  constructor(db: Database.Database, options: HRManagerOptions) {
+  constructor(db: Database, options: HRManagerOptions) {
     this.db = db;
     this.options = options;
   }

@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -28,19 +28,19 @@ function ensureDir(filePath: string): void {
   }
 }
 
-export function openGlobalDb(dbPath?: string): Database.Database {
+export function openGlobalDb(dbPath?: string): Database {
   const path = dbPath ?? join(homedir(), ".config", "buffy", "hr.db");
   ensureDir(path);
   const db = new Database(path);
-  db.pragma("journal_mode = WAL");
+  db.exec("PRAGMA journal_mode = WAL");
   db.exec(SESSIONS_SCHEMA);
   return db;
 }
 
-export function openProjectDb(projectRoot: string): Database.Database {
+export function openProjectDb(projectRoot: string): Database {
   const path = join(projectRoot, ".buffy", "state.db");
   ensureDir(path);
   const db = new Database(path);
-  db.pragma("journal_mode = WAL");
+  db.exec("PRAGMA journal_mode = WAL");
   return db;
 }

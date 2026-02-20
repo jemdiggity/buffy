@@ -162,6 +162,7 @@ async function main() {
       await waitUntilExit();
     } catch (err) {
       // Ink may not be available (e.g., in CI), fall back to headless mode
+      console.error("TUI error:", err);
       console.log("TUI not available, running in headless mode. Press Ctrl+C to stop.");
       await new Promise<void>((resolve) => {
         process.on("SIGINT", () => {

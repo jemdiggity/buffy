@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { Database } from "bun:sqlite";
 import type { Message, MessageType, RoleName } from "./types.js";
 
 const COMMS_SCHEMA = `
@@ -16,9 +16,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_to_role ON messages(to_role, read_at);
 `;
 
 export class CommsBus {
-  private db: Database.Database;
+  private db: Database;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database) {
     this.db = db;
     this.db.exec(COMMS_SCHEMA);
   }
