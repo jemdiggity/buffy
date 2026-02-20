@@ -55,7 +55,7 @@ export class DeveloperRole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.worktreePath,
-      command: `claude --dangerously-skip-permissions -p "$(cat ${promptFile})"`,
+      command: `claude -p "$(cat ${promptFile})"`,
       env,
     });
 
