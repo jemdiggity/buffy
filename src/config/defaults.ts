@@ -20,6 +20,7 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   hr: {
     max_concurrent_sessions: 5,
     estimated_cost_per_minute: 0.15,
+    plan_price_usd: 200,
   },
   backpressure: {
     max_prs_awaiting_cto: 5,

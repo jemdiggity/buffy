@@ -23,6 +23,15 @@ function createTestDb(): Database {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(ended_at) WHERE ended_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
+
+    CREATE TABLE IF NOT EXISTS usage_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      five_hour_utilization REAL NOT NULL,
+      seven_day_utilization REAL NOT NULL,
+      source TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_usage_snapshots_ts ON usage_snapshots(timestamp);
   `);
   return db;
 }
@@ -35,6 +44,7 @@ function createMockDeps(overrides?: Partial<PMDependencies>): PMDependencies {
     maxTotalSessions: 5,
     maxDailyCostUsd: 50,
     estimatedCostPerMinute: 0.15,
+    planPriceUsd: 200,
   });
   const bus = new CommsBus(db);
 

@@ -79,7 +79,13 @@ export function StatusView({ data }: StatusViewProps) {
               </Text>
               <Text>
                 Burn rate: ${data.budget.burnRatePerMinute.toFixed(2)}/min
+                {" "}({data.budget.burnRateSource === "api" ? "API" : "estimated"})
               </Text>
+              {data.budget.estimatedMonthlyCostUsd != null && (
+                <Text>
+                  Monthly est: ${data.budget.estimatedMonthlyCostUsd.toFixed(0)}/${data.budget.planPriceUsd}
+                </Text>
+              )}
             </Panel>
           )}
 

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { SessionRecord, CapacityCheck, BudgetSnapshot } from "./types.js";
+import type { SessionRecord, CapacityCheck, BudgetSnapshot, UsageSnapshotRecord } from "./types.js";
 
 export interface HRManagerOptions {
   project: string;
@@ -7,6 +7,7 @@ export interface HRManagerOptions {
   maxTotalSessions: number;
   maxDailyCostUsd: number;
   estimatedCostPerMinute: number;
+  planPriceUsd: number;
 }
 
 export class HRManager {
@@ -114,20 +115,72 @@ export class HRManager {
       .all() as SessionRecord[];
   }
 
+  recordUsageSnapshot(snapshot: Omit<UsageSnapshotRecord, "id">): void {
+    this.db.prepare(
+      `INSERT INTO usage_snapshots (timestamp, five_hour_utilization, seven_day_utilization, source)
+       VALUES (?, ?, ?, ?)`
+    ).run(
+      snapshot.timestamp,
+      snapshot.five_hour_utilization,
+      snapshot.seven_day_utilization,
+      snapshot.source
+    );
+  }
+
+  pruneOldSnapshots(): void {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    this.db.prepare("DELETE FROM usage_snapshots WHERE timestamp < ?").run(sevenDaysAgo);
+  }
+
+  getRecentSnapshots(count: number): UsageSnapshotRecord[] {
+    return this.db.prepare(
+      "SELECT * FROM usage_snapshots ORDER BY timestamp DESC LIMIT ?"
+    ).all(count) as UsageSnapshotRecord[];
+  }
+
   getBudgetSnapshot(): BudgetSnapshot {
     const projectSessions = this.getActiveSessionCount(this.options.project);
     const totalSessions = this.getActiveSessionCount();
-    const dailyCost = this.getEstimatedDailyCost();
+    const sessionBasedDailyCost = this.getEstimatedDailyCost();
+
+    const latestSnapshot = this.getRecentSnapshots(1)[0];
+    const hasApiData = latestSnapshot?.source === "api";
+
+    // Burn rate from utilization level: 5-hour utilization is more responsive
+    // to current activity than 7-day. At U% utilization sustained over a month,
+    // cost = (U / 100) * planPriceUsd. Per-minute = that / (30 * 24 * 60).
+    const burnRatePerMinute = hasApiData
+      ? this.computeBurnRate(latestSnapshot.five_hour_utilization)
+      : totalSessions * this.options.estimatedCostPerMinute;
+
+    // Monthly projection from 7-day utilization: planPriceUsd is already monthly,
+    // so U% of 7-day window ≈ U% of monthly cost.
+    const estimatedMonthlyCostUsd = hasApiData
+      ? (latestSnapshot.seven_day_utilization / 100) * this.options.planPriceUsd
+      : undefined;
+
+    // Daily cost: use utilization-derived value when available
+    const estimatedDailyCostUsd = estimatedMonthlyCostUsd != null
+      ? estimatedMonthlyCostUsd / 30
+      : sessionBasedDailyCost;
 
     return {
       activeProjectSessions: projectSessions,
       activeTotalSessions: totalSessions,
       maxProjectSessions: this.options.maxProjectSessions,
       maxTotalSessions: this.options.maxTotalSessions,
-      estimatedDailyCostUsd: dailyCost,
+      estimatedDailyCostUsd,
       maxDailyCostUsd: this.options.maxDailyCostUsd,
-      burnRatePerMinute: totalSessions * this.options.estimatedCostPerMinute,
+      burnRatePerMinute,
+      estimatedMonthlyCostUsd,
+      burnRateSource: hasApiData ? "api" : "estimated",
+      planPriceUsd: this.options.planPriceUsd,
     };
+  }
+
+  computeBurnRate(utilizationPercent: number): number {
+    const minutesPerMonth = 30 * 24 * 60;
+    return (utilizationPercent / 100) * this.options.planPriceUsd / minutesPerMonth;
   }
 
   private getActiveSessionCount(project?: string): number {

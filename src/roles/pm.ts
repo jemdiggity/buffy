@@ -10,6 +10,7 @@ import { LABELS } from "../github/index.js";
 import { DeveloperRole } from "./developer.js";
 import { CTORole } from "./cto.js";
 import type { NightShiftScheduler } from "../nightshift/index.js";
+import type { UsageClient } from "../usage/index.js";
 
 export interface PMStatus {
   state: "idle" | "polling" | "spawning" | "cleaning";
@@ -36,6 +37,7 @@ export interface PMDependencies {
   developer: DeveloperRole;
   cto?: CTORole;
   nightShift?: NightShiftScheduler;
+  usageClient?: UsageClient;
   projectRoot: string;
   dryRun?: boolean;
   log?: (msg: string) => void;
@@ -97,6 +99,7 @@ export class PMRole {
       this.status.lastPollAt = new Date().toISOString();
 
       await this.processMessages();
+      await this.recordUsageSnapshot();
       await this.checkCompletedSessions();
       await this.checkCTOCompletion();
       await this.checkDeveloperCompletion();
@@ -116,6 +119,28 @@ export class PMRole {
     // Always update counts from HR, regardless of early returns or errors above
     this.status.activeDevelopers = this.deps.hr.getActiveSessions(this.getProjectName())
       .filter((s) => s.role === "developer").length;
+  }
+
+  private async recordUsageSnapshot(): Promise<void> {
+    if (!this.deps.usageClient) return;
+
+    try {
+      const usage = await this.deps.usageClient.fetchUsage();
+      if (!usage) return;
+
+      this.deps.hr.recordUsageSnapshot({
+        timestamp: new Date().toISOString(),
+        five_hour_utilization: usage.fiveHour.utilization,
+        seven_day_utilization: usage.sevenDayOpus.utilization,
+        source: "api",
+      });
+      this.deps.hr.pruneOldSnapshots();
+
+      this.status.fiveHourUsage = usage.fiveHour.utilization;
+      this.status.usageSource = "api";
+    } catch {
+      // Non-fatal — fall back to session-based estimation
+    }
   }
 
   private async processMessages(): Promise<void> {
