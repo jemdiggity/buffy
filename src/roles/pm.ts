@@ -79,6 +79,7 @@ export class PMRole {
   }
 
   async runCycle(): Promise<void> {
+    this.log("Starting cycle...");
 
     try {
       this.status.state = "polling";
@@ -94,6 +95,7 @@ export class PMRole {
       await this.assignNewWork();
 
       this.status.state = "idle";
+      this.log("Cycle complete");
     } catch (err) {
       this.logError("runCycle failed", err);
       this.status.state = "idle";
@@ -183,6 +185,7 @@ export class PMRole {
     let issues;
     try {
       issues = await this.deps.issues.fetchReadyIssues(config.pm.issue_filter);
+      this.log(`Fetched ${issues.length} ready issue(s)`);
     } catch (err) {
       this.logError("Failed to fetch issues", err);
       return;
@@ -195,9 +198,12 @@ export class PMRole {
     const existingWorktrees = await this.deps.worktrees.listWorktrees();
     const worktreeIssueNumbers = new Set(existingWorktrees.map((w) => w.issueNumber));
 
+    this.log(`Active issues: [${[...activeIssueNumbers]}], worktree issues: [${[...worktreeIssueNumbers]}]`);
+
     issues = issues.filter(
       (i) => !activeIssueNumbers.has(i.number) && !worktreeIssueNumbers.has(i.number)
     );
+    this.log(`After filtering: ${issues.length} issue(s) to assign`);
 
     issues = this.deps.issues.prioritize(issues);
     this.status.issuesInQueue = issues.length;

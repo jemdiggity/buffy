@@ -18,7 +18,8 @@ export class TmuxManager {
       }
     }
 
-    args.push(options.command);
+    // Unset CLAUDECODE so nested Claude Code sessions can start
+    args.push(`unset CLAUDECODE; ${options.command}`);
     await execa("tmux", args);
   }
 

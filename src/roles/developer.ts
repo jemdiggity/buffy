@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TmuxManager } from "../tmux/session.js";
@@ -41,8 +41,11 @@ export class DeveloperRole {
     const sessionName = devSessionName(options.project, options.issueNumber);
     const prompt = this.buildPrompt(options);
 
-    // Escape the prompt for shell — use single quotes and escape any single quotes in content
-    const escapedPrompt = prompt.replace(/'/g, "'\\''");
+    // Write prompt to a temp file to avoid shell escaping issues with backticks/quotes
+    const promptDir = join(options.worktreePath, ".buffy");
+    mkdirSync(promptDir, { recursive: true });
+    const promptFile = join(promptDir, "prompt.md");
+    writeFileSync(promptFile, prompt);
 
     const env: Record<string, string> = {};
     if (options.ghToken) {
@@ -52,7 +55,7 @@ export class DeveloperRole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.worktreePath,
-      command: `claude -p '${escapedPrompt}'`,
+      command: `claude --dangerously-skip-permissions -p "$(cat ${promptFile})"`,
       env,
     });
 

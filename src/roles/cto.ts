@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TmuxManager } from "../tmux/index.js";
@@ -46,7 +46,12 @@ export class CTORole {
   async spawn(options: CTOSpawnOptions, prs: PRInfo[]): Promise<string> {
     const sessionName = ctoSessionName(options.project);
     const prompt = this.buildPrompt(options.repo, prs);
-    const escapedPrompt = prompt.replace(/'/g, "'\\''");
+
+    // Write prompt to a temp file to avoid shell escaping issues
+    const promptDir = join(options.cwd, ".buffy");
+    mkdirSync(promptDir, { recursive: true });
+    const promptFile = join(promptDir, "cto-prompt.md");
+    writeFileSync(promptFile, prompt);
 
     const env: Record<string, string> = {};
     if (options.ghToken) {
@@ -56,7 +61,7 @@ export class CTORole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.cwd,
-      command: `claude -p '${escapedPrompt}'`,
+      command: `claude --dangerously-skip-permissions -p "$(cat ${promptFile})"`,
       env,
     });
 
