@@ -3,17 +3,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TmuxManager } from "../tmux/index.js";
 import { ctoSessionName } from "../tmux/naming.js";
-import { PRManager } from "../git/index.js";
 import type { PRInfo } from "../git/index.js";
-import { LABELS } from "../github/index.js";
-import { CommsBus } from "../comms/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface CTOSpawnOptions {
   project: string;
   repo: string;
-  cwd: string;
+  repoRoot: string;
   ghToken?: string;
 }
 
@@ -33,14 +30,16 @@ export class CTORole {
       template = this.fallbackTemplate();
     }
 
-    const prList = prs
-      .map((pr) => `- **PR #${pr.number}**: ${pr.title} (branch: \`${pr.headBranch}\`)`)
-      .join("\n");
+    const prSections = prs
+      .map(
+        (pr) =>
+          `### PR #${pr.number}: ${pr.title}\n- Branch: \`${pr.headBranch}\`\n- Author: ${pr.author}\n- URL: ${pr.url}\n- Review: \`gh pr diff ${pr.number}\`\n- Approve: \`gh pr review ${pr.number} --approve --body "CTO Review: Approved. <summary>" && gh pr edit ${pr.number} --remove-label "needs-cto-review" --add-label "cto-approved"\`\n- Request changes: \`gh pr review ${pr.number} --request-changes --body "CTO Review: Changes needed.\\n\\n<feedback>"\``
+      )
+      .join("\n\n");
 
     return template
       .replaceAll("{{REPO}}", repo)
-      .replaceAll("{{PR_LIST}}", prList)
-      .replaceAll("{{PR_NUMBER}}", prs.map((p) => String(p.number)).join(", "));
+      .replaceAll("{{PR_SECTIONS}}", prSections);
   }
 
   async spawn(options: CTOSpawnOptions, prs: PRInfo[]): Promise<string> {
@@ -48,7 +47,7 @@ export class CTORole {
     const prompt = this.buildPrompt(options.repo, prs);
 
     // Write prompt to a temp file to avoid shell escaping issues
-    const promptDir = join(options.cwd, ".buffy");
+    const promptDir = join(options.repoRoot, ".buffy");
     mkdirSync(promptDir, { recursive: true });
     const promptFile = join(promptDir, "cto-prompt.md");
     writeFileSync(promptFile, prompt);
@@ -60,7 +59,7 @@ export class CTORole {
 
     await this.tmux.createSession({
       name: sessionName,
-      cwd: options.cwd,
+      cwd: options.repoRoot,
       command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
       env,
     });
@@ -85,9 +84,11 @@ export class CTORole {
 
 ## PRs to Review
 
-{{PR_LIST}}
+{{PR_SECTIONS}}
 
-## For Each PR
+## Review Process
+
+For each PR above:
 
 1. View the PR diff: \`gh pr diff <number>\`
 2. Review for correctness, quality, security, tests, consistency

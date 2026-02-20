@@ -6,6 +6,16 @@ import { KeyHints } from "./components/KeyHints.js";
 import type { PMStatus } from "../roles/pm.js";
 import type { BudgetSnapshot } from "../hr/index.js";
 
+export interface NightShiftDisplayState {
+  active: boolean;
+  windowOpen: boolean;
+  weeklyUsagePercent: number;
+  headroomPercent: number;
+  throttled: boolean;
+  reason: string;
+  nextWindowStart?: string;
+}
+
 export interface StatusData {
   projectName: string;
   dashboardUrl: string;
@@ -16,6 +26,7 @@ export interface StatusData {
   developers: Array<{ issueNumber: number; sessionName: string; status: string }>;
   approvedPRs: Array<{ number: number; title: string }>;
   selectedPRIndex: number;
+  nightShift?: NightShiftDisplayState;
 }
 
 interface StatusViewProps {
@@ -67,6 +78,26 @@ export function StatusView({ data }: StatusViewProps) {
               <Text>
                 Burn rate: ${data.budget.burnRatePerMinute.toFixed(2)}/min
               </Text>
+            </Panel>
+          )}
+
+          {data.nightShift && (
+            <Panel title="Night Shift">
+              <Text>
+                Status: {data.nightShift.active ? "active" : data.nightShift.windowOpen ? "window open" : "idle"}
+              </Text>
+              <Text>
+                Weekly usage: {data.nightShift.weeklyUsagePercent.toFixed(1)}%
+              </Text>
+              <Text>
+                Headroom: {data.nightShift.headroomPercent.toFixed(1)}%
+              </Text>
+              {data.nightShift.throttled && (
+                <Text color="yellow">Throttled: approaching safety margin</Text>
+              )}
+              {data.nightShift.nextWindowStart && !data.nightShift.windowOpen && (
+                <Text color="gray">Next window: {data.nightShift.nextWindowStart}</Text>
+              )}
             </Panel>
           )}
         </Box>

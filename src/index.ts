@@ -14,7 +14,10 @@ import { WorktreeManager } from "./git/index.js";
 import { PRManager } from "./git/index.js";
 import { IssueManager } from "./github/index.js";
 import { DeveloperRole } from "./roles/developer.js";
+import { CTORole } from "./roles/cto.js";
 import { PMRole } from "./roles/pm.js";
+import { startDashboard } from "./dashboard/index.js";
+import { WeeklyUsageTracker, NightShiftScheduler } from "./nightshift/index.js";
 
 const VERSION = "0.1.0";
 
@@ -79,6 +82,17 @@ async function main() {
   const prs = new PRManager(projectRoot, ghToken);
   const issues = new IssueManager(projectRoot, ghToken);
   const developer = new DeveloperRole(tmux);
+  const cto = new CTORole(tmux);
+
+  // Night shift (optional)
+  let nightShift: NightShiftScheduler | undefined;
+  if (config.project.night_shift.enabled) {
+    const usageTracker = new WeeklyUsageTracker(
+      globalDb,
+      config.project.night_shift.weekly_session_minutes_limit
+    );
+    nightShift = new NightShiftScheduler(config.project.night_shift, usageTracker);
+  }
 
   const pm = new PMRole({
     config,
@@ -89,14 +103,26 @@ async function main() {
     prs,
     issues,
     developer,
+    cto,
+    nightShift,
     projectRoot,
     dryRun: flags.dryRun,
     log: (msg) => console.log(msg),
   });
 
+  // Start the dashboard
+  const dashboard = startDashboard({
+    port: config.project.dashboard.port,
+    pm,
+    hr,
+    tmux,
+    projectName,
+  });
+
   // Start the PM loop
   pm.start();
   console.log(`Buffy v${VERSION} — ${config.project.project.repo}`);
+  console.log(`Dashboard: http://localhost:${config.project.dashboard.port}`);
   console.log(`PM polling every ${config.project.pm.poll_interval_seconds}s`);
   if (flags.dryRun) {
     console.log("DRY RUN MODE — no sessions will be spawned");
@@ -117,8 +143,10 @@ async function main() {
           prs,
           projectName,
           dashboardPort: config.project.dashboard.port,
+          nightShift,
           onQuit: () => {
             pm.stop();
+            dashboard.close();
             globalDb.close();
             projectDb.close();
           },
@@ -132,6 +160,7 @@ async function main() {
       await new Promise<void>((resolve) => {
         process.on("SIGINT", () => {
           pm.stop();
+          dashboard.close();
           globalDb.close();
           projectDb.close();
           resolve();
@@ -144,6 +173,7 @@ async function main() {
     await new Promise<void>((resolve) => {
       process.on("SIGINT", () => {
         pm.stop();
+        dashboard.close();
         globalDb.close();
         projectDb.close();
         resolve();

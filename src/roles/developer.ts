@@ -13,6 +13,7 @@ export interface DeveloperSpawnOptions {
   repoRoot: string;
   ghToken?: string;
   prTitlePrefix?: string;
+  prNumber?: number;
 }
 
 export class DeveloperRole {
@@ -31,10 +32,34 @@ export class DeveloperRole {
       // Fallback inline template if file not found
       template = this.fallbackTemplate();
     }
-    return template
+    let prompt = template
       .replaceAll("{{REPO}}", options.repo)
       .replaceAll("{{ISSUE_NUMBER}}", String(options.issueNumber))
       .replaceAll("{{PR_TITLE_PREFIX}}", options.prTitlePrefix ?? "");
+
+    if (options.prNumber) {
+      prompt += this.revisionInstructions(options.prNumber);
+    }
+
+    return prompt;
+  }
+
+  private revisionInstructions(prNumber: number): string {
+    return `
+
+## REVISION MODE
+
+This is a revision of an existing PR #${prNumber}. The CTO has requested changes.
+
+1. Checkout the existing PR branch: \`gh pr checkout ${prNumber}\`
+2. Read the review comments: \`gh pr view ${prNumber} --comments\`
+3. Read the review feedback: \`gh pr reviews ${prNumber}\`
+4. Address ALL requested changes
+5. Run the project's test suite and fix any failures
+6. Push your fixes: \`git push\`
+7. Re-add the CTO review label: \`gh pr edit ${prNumber} --add-label "needs-cto-review"\`
+
+Do NOT create a new PR — push to the existing branch.`;
   }
 
   async spawn(options: DeveloperSpawnOptions): Promise<string> {

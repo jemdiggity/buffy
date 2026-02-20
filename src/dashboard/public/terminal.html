@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buffy Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    #terminal-container {
+      width: 100%;
+      height: calc(100vh - 60px);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Buffy</h1>
+    <span id="session-name" class="subtitle"></span>
+    <a href="/" class="back-link">Back to dashboard</a>
+  </header>
+
+  <div id="terminal-container"></div>
+
+  <script type="module">
+    import { Terminal } from "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm";
+    import { FitAddon } from "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm";
+    import { WebLinksAddon } from "https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/+esm";
+
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("session");
+
+    document.getElementById("session-name").textContent = session || "unknown";
+
+    if (!session) {
+      document.getElementById("terminal-container").textContent = "No session specified";
+    } else {
+      const term = new Terminal({
+        theme: {
+          background: "#1a1b26",
+          foreground: "#a9b1d6",
+          cursor: "#c0caf5",
+        },
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontSize: 14,
+      });
+
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon());
+      term.open(document.getElementById("terminal-container"));
+      fitAddon.fit();
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal?session=${encodeURIComponent(session)}`);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      };
+
+      ws.onmessage = (event) => {
+        term.write(event.data);
+      };
+
+      ws.onclose = () => {
+        term.write("\r\n\x1b[33mSession disconnected.\x1b[0m\r\n");
+      };
+
+      term.onData((data) => {
+        ws.send(data);
+      });
+
+      window.addEventListener("resize", () => {
+        fitAddon.fit();
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      });
+    }
+  </script>
+</body>
+</html>

@@ -31,11 +31,12 @@ Human (CEO)
 - Cleans up worktrees and branches for merged/closed PRs
 - Supports night shift mode (see below)
 
-**CTO** — Long-lived Claude Code session in tmux.
-- Polls GitHub for draft PRs with label `needs-cto-review` on its interval
+**CTO** — Ephemeral Claude Code session in tmux, spawned one-shot per batch by the PM.
+- PM detects PRs labeled `needs-cto-review` and spawns a CTO session to review the batch
 - Reviews diffs for quality, correctness, consistency, security
-- Either requests changes (triggers a new developer session to fix) or approves
-- Batches approved PRs with summaries for the human's review session
+- Approves: relabels PR from `needs-cto-review` to `cto-approved` via `gh pr edit`
+- Requests changes: leaves label, posts review via `gh pr review --request-changes`
+- CTO session dies after reviewing the batch
 
 **HR Manager** — Pure TypeScript module, no LLM. Imported directly by the PM (`hr.canSpawn()`, `hr.recordSession()`, etc.). Reads/writes SQLite for budget state. The dashboard reads the same database for budget display. Not a separate process — just a library.
 - Tracks active sessions and estimated costs (wall-clock × cost-per-minute)
@@ -49,6 +50,7 @@ Human (CEO)
 - Developer creates its own feature branch, does the work autonomously (reads issue via `gh`, writes code, runs tests)
 - Opens a draft PR with label `needs-cto-review` when done
 - Session dies after PR is opened
+- For revisions: PM spawns developer with `prNumber` context, developer checks out existing PR branch via `gh pr checkout`, reads review comments, pushes fixes, and re-adds `needs-cto-review` label
 
 ### The Developer Workflow
 
@@ -67,14 +69,19 @@ GitHub issue exists in the repo
   → PM asks HR Manager: do we have capacity?
   → HR Manager checks: active sessions, budget, burn rate
   → If yes: PM spawns a Developer session
-  → Developer: creates feature branch, codes, runs tests, opens draft PR
-  → Developer session dies
-  → CTO picks up the draft PR, reviews the diff
-  → CTO either:
-      - Requests changes → PM spawns new Developer session to address feedback
-      - Approves → adds to human review batch with summary
-  → Human sits down, opens `buffy`, sees batch of CTO-approved PRs in the TUI
-  → Human approves, requests changes, or sets new priorities
+  → Developer: creates feature branch, codes, runs tests, opens draft PR with `needs-cto-review`
+  → Developer session dies, PM cleans up worktree
+  → PM detects `needs-cto-review` PRs, spawns CTO session with the batch
+  → CTO reviews each PR:
+      - Approves → relabels to `cto-approved`
+      - Requests changes → leaves `needs-cto-review` label, posts review
+  → CTO session dies
+  → PM detects rejected PRs (label still `needs-cto-review` + CHANGES_REQUESTED review decision)
+  → PM removes `needs-cto-review` label, spawns revision Developer with PR context
+  → Revision Developer: checks out PR branch, reads review comments, fixes, pushes, re-adds `needs-cto-review`
+  → Repeat until approved or max_revisions exceeded (flagged `needs-help`)
+  → Human opens `buffy` TUI, sees batch of `cto-approved` PRs
+  → Human reviews diff + CTO summary, approves (squash merge) or opens in GitHub for changes
 ```
 
 ### Backpressure
@@ -162,13 +169,19 @@ buffy/                             # The npm package
 │   │   ├── bus.ts                 # Inter-role communication (SQLite-backed message queue)
 │   │   └── types.ts               # Message types
 │   ├── dashboard/
-│   │   ├── server.ts              # Hono server + WebSocket for terminal
-│   │   ├── pty.ts                 # node-pty bridge for xterm.js
+│   │   ├── server.ts              # Hono server: REST API + static files
+│   │   ├── pty.ts                 # WebSocket + node-pty bridge for xterm.js terminal
+│   │   ├── index.ts               # Barrel export
 │   │   └── public/
 │   │       ├── index.html         # Dashboard: status overview, PR pipeline, budget
 │   │       ├── terminal.html      # Terminal view: xterm.js session attach
-│   │       ├── style.css
-│   │       └── app.js             # Vanilla JS: DOM updates, WebSocket, xterm init
+│   │       ├── style.css          # Dark theme (Tokyo Night inspired)
+│   │       └── app.js             # Vanilla JS: poll /api/status, render DOM
+│   ├── nightshift/
+│   │   ├── types.ts               # NightShiftState, UsageSnapshot, SpawnDecision
+│   │   ├── usage.ts               # WeeklyUsageTracker: queries HR SQLite for session-minutes
+│   │   ├── scheduler.ts           # NightShiftScheduler: window check, headroom, spawn decision
+│   │   └── index.ts               # Barrel export
 │   └── config/
 │       ├── schema.ts              # TOML config types (local + global)
 │       └── defaults.ts            # Default configuration values
@@ -231,6 +244,8 @@ enabled = false
 start_hour = 1                    # 1am local time
 end_hour = 6                      # 6am local time
 safety_margin_percent = 15        # Stop if projected to use >85% of weekly limit
+weekly_session_minutes_limit = 600 # 10 hours of session time per rolling week
+max_concurrent_developers = 5     # Elevated from PM's default 3 during night shift
 ```
 
 **Global: `~/.config/buffy/config.toml`**
@@ -397,19 +412,21 @@ The PM spawns `claude -w issue-{N} --permission-mode acceptEdits "prompt"` from 
 
 ### 3. CTO "request changes" loop
 
-When the CTO rejects a PR:
-1. CTO posts review comments on the GitHub PR via `gh pr review`
-2. CTO sends a message to the bus: `{type: "revision_needed", issue: 142, pr: 47, branch: "buffy/issue-142"}`
-3. PM picks up the message, spawns a new developer session in the existing worktree
-4. New developer reads the PR review comments via `gh pr view 47 --comments` to understand what needs fixing
-5. New developer pushes fixes to the same branch, PR updates automatically
-6. CTO re-reviews on next poll cycle
+Uses GitHub labels as signals — no bus dependency for the review loop:
+1. Developer opens PR with `needs-cto-review` label
+2. PM detects `needs-cto-review` PRs, spawns CTO session with the batch
+3. CTO approves → relabels to `cto-approved`. CTO rejects → leaves label, posts review via `gh pr review --request-changes`
+4. CTO session dies
+5. PM detects rejected PRs: label still `needs-cto-review` + `reviewDecision === "CHANGES_REQUESTED"` (via `gh pr view --json reviewDecision`)
+6. PM removes `needs-cto-review` label (prevents re-processing stale state), spawns revision developer with `prNumber` context
+7. Revision developer: checks out PR branch via `gh pr checkout`, reads review comments via `gh pr view --comments`, fixes, pushes, re-adds `needs-cto-review`
+8. Next PM cycle: detects `needs-cto-review` again, spawns CTO → repeat
 
-Max retries configurable in `buffy.toml` (default: 2). After max retries, issue is flagged for human attention.
+Max retries configurable in `buffy.toml` (default: 2). PM tracks revision count per PR. After max retries, issue is flagged for human attention with `needs-help` label.
 
 ### 4. How the CTO discovers new PRs
 
-CTO polls GitHub on its interval: `gh pr list --label needs-cto-review`. Simple, no bus dependency. Developers label their PRs `needs-cto-review` as their last action before the session dies.
+The PM discovers PRs needing review: `gh pr list --label needs-cto-review`. When fresh PRs exist (no `CHANGES_REQUESTED` review decision), the PM spawns an ephemeral CTO session with the batch. The CTO does not poll — it is spawned on-demand by the PM.
 
 ### 5. Token tracking
 
@@ -458,7 +475,8 @@ Buffy supports multiple projects running simultaneously:
 - PM spawns `claude -w issue-{N} --permission-mode acceptEdits "prompt"` in a new tmux session with cwd set to the repo root. Claude Code's `-w` flag creates the worktree and picks up the repo's CLAUDE.md and .claude/ config automatically.
 - All Claude sessions use the `claude` CLI (not the SDK) to bill against Max subscription
 - Each tmux session gets `GH_TOKEN` injected from the project config so `gh` commands authenticate to the correct GitHub account
-- The dashboard WebSocket server runs on the same Hono instance as the static file server
+- The dashboard starts alongside the PM on `buffy` launch, serves REST API (`/api/status`, `/api/sessions`) and static files, with WebSocket terminal attachment via node-pty
+- The dashboard is shut down gracefully on TUI quit or SIGINT
 - Project name for session naming is derived from the repo directory name
 
 ## Testing

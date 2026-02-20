@@ -33,6 +33,8 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
     start_hour: 1,
     end_hour: 6,
     safety_margin_percent: 15,
+    weekly_session_minutes_limit: 600,
+    max_concurrent_developers: 5,
   },
 };
 

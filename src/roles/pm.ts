@@ -8,6 +8,8 @@ import { PRManager } from "../git/index.js";
 import { IssueManager } from "../github/index.js";
 import { LABELS } from "../github/index.js";
 import { DeveloperRole } from "./developer.js";
+import { CTORole } from "./cto.js";
+import type { NightShiftScheduler } from "../nightshift/index.js";
 
 export interface PMStatus {
   state: "idle" | "polling" | "spawning" | "cleaning";
@@ -16,6 +18,8 @@ export interface PMStatus {
   issuesInQueue: number;
   prsAwaitingCTO: number;
   prsAwaitingHuman: number;
+  ctoRunning: boolean;
+  ctoReviewing: number[];
   errors: string[];
 }
 
@@ -28,6 +32,8 @@ export interface PMDependencies {
   prs: PRManager;
   issues: IssueManager;
   developer: DeveloperRole;
+  cto?: CTORole;
+  nightShift?: NightShiftScheduler;
   projectRoot: string;
   dryRun?: boolean;
   log?: (msg: string) => void;
@@ -38,6 +44,7 @@ export class PMRole {
   private status: PMStatus;
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private revisionCounts = new Map<number, number>();
 
   constructor(deps: PMDependencies) {
     this.deps = deps;
@@ -47,6 +54,8 @@ export class PMRole {
       issuesInQueue: 0,
       prsAwaitingCTO: 0,
       prsAwaitingHuman: 0,
+      ctoRunning: false,
+      ctoReviewing: [],
       errors: [],
     };
   }
@@ -88,6 +97,8 @@ export class PMRole {
       await this.processMessages();
       await this.checkCompletedSessions();
       await this.checkDeveloperCompletion();
+      await this.handleCTOReviewOutcomes();
+      await this.maybeSpawnCTO();
 
       this.status.state = "spawning";
       await this.assignNewWork();
@@ -132,25 +143,28 @@ export class PMRole {
     const sessions = this.deps.hr.getActiveSessions(projectName);
 
     for (const session of sessions) {
-      if (session.role !== "developer") continue;
-
       const alive = await this.deps.tmux.isSessionAlive(session.tmux_session);
       if (!alive) {
-        this.log(`Developer session ${session.tmux_session} has ended`);
+        this.log(`Session ${session.tmux_session} (role: ${session.role}) has ended`);
         if (session.id != null) {
           this.deps.hr.recordSessionEnd(session.id);
         }
-        if (session.issue_number) {
+
+        if (session.role === "cto") {
+          this.status.ctoRunning = false;
+          this.status.ctoReviewing = [];
+          this.log("CTO session ended");
+          continue;
+        }
+
+        // Developer session cleanup
+        if (session.role === "developer" && session.issue_number) {
           try {
             await this.deps.issues.removeLabel(session.issue_number, LABELS.IN_PROGRESS);
           } catch {
             // Label may already be removed
           }
-        }
 
-        // Clean up worktree if it still exists (Claude auto-cleans on clean exit,
-        // but if the session was killed or crashed, we clean up manually)
-        if (session.issue_number) {
           const worktreePath = session.worktree_path ??
             this.deps.worktrees.claudeWorktreePath(session.issue_number);
           const branch = session.worktree_branch ??
@@ -232,6 +246,132 @@ export class PMRole {
     }
   }
 
+  private async handleCTOReviewOutcomes(): Promise<void> {
+    if (!this.deps.cto) return;
+
+    // Only process outcomes if CTO is NOT currently running
+    const ctoRunning = await this.deps.cto.isRunning(this.getProjectName());
+    if (ctoRunning) return;
+
+    // Find PRs still labeled needs-cto-review with CHANGES_REQUESTED decision
+    let prsNeedingReview;
+    try {
+      prsNeedingReview = await this.deps.prs.listByLabel(LABELS.NEEDS_CTO_REVIEW);
+    } catch {
+      return;
+    }
+
+    for (const pr of prsNeedingReview) {
+      const decision = await this.deps.prs.getReviewDecision(pr.number);
+      if (decision !== "CHANGES_REQUESTED") continue;
+
+      const issueNumber = this.extractIssueNumber(pr);
+      if (!issueNumber) {
+        this.log(`Cannot extract issue number from PR #${pr.number} (branch: ${pr.headBranch})`);
+        continue;
+      }
+
+      const revisionCount = (this.revisionCounts.get(pr.number) ?? 0) + 1;
+      this.revisionCounts.set(pr.number, revisionCount);
+
+      const maxRevisions = this.deps.config.project.cto.max_revisions;
+      if (revisionCount > maxRevisions) {
+        this.log(`PR #${pr.number} exceeded max revisions (${revisionCount}/${maxRevisions}), flagging for human`);
+        try {
+          await this.deps.issues.addLabel(issueNumber, LABELS.NEEDS_HELP);
+        } catch {
+          // Non-fatal
+        }
+        continue;
+      }
+
+      this.log(`PR #${pr.number} needs revision (${revisionCount}/${maxRevisions}), spawning developer`);
+
+      // Remove the label before spawning revision developer to prevent re-processing
+      try {
+        await this.deps.prs.removeLabel(pr.number, LABELS.NEEDS_CTO_REVIEW);
+      } catch {
+        // Non-fatal
+      }
+
+      await this.spawnDeveloper(issueNumber, pr.number);
+    }
+  }
+
+  private async maybeSpawnCTO(): Promise<void> {
+    if (!this.deps.cto) return;
+
+    const projectName = this.getProjectName();
+    const ctoRunning = await this.deps.cto.isRunning(projectName);
+    if (ctoRunning) {
+      this.status.ctoRunning = true;
+      return;
+    }
+
+    // Check for PRs needing CTO review
+    let prsToReview;
+    try {
+      prsToReview = await this.deps.prs.listByLabel(LABELS.NEEDS_CTO_REVIEW);
+    } catch {
+      return;
+    }
+
+    // Only spawn CTO for PRs that haven't been rejected (no CHANGES_REQUESTED)
+    const freshPRs = [];
+    for (const pr of prsToReview) {
+      const decision = await this.deps.prs.getReviewDecision(pr.number);
+      if (decision !== "CHANGES_REQUESTED") {
+        freshPRs.push(pr);
+      }
+    }
+
+    if (freshPRs.length === 0) return;
+
+    // Check HR capacity before spawning CTO
+    const capacity = this.deps.hr.canSpawn();
+    if (!capacity.canSpawn) {
+      this.log(`Cannot spawn CTO: ${capacity.reason}`);
+      return;
+    }
+
+    if (this.deps.dryRun) {
+      this.log(`[DRY RUN] Would spawn CTO to review ${freshPRs.length} PR(s)`);
+      return;
+    }
+
+    this.log(`Spawning CTO to review ${freshPRs.length} PR(s): ${freshPRs.map((p) => `#${p.number}`).join(", ")}`);
+
+    const config = this.deps.config.project;
+    const ghToken = config.project.gh_token_env
+      ? process.env[config.project.gh_token_env]
+      : undefined;
+
+    try {
+      const sessionName = await this.deps.cto.spawn(
+        {
+          project: projectName,
+          repo: config.project.repo,
+          repoRoot: this.deps.projectRoot,
+          ghToken,
+        },
+        freshPRs
+      );
+
+      this.deps.hr.recordSessionStart({
+        project: projectName,
+        role: "cto",
+        tmux_session: sessionName,
+        started_at: new Date().toISOString(),
+      });
+
+      this.status.ctoRunning = true;
+      this.status.ctoReviewing = freshPRs.map((p) => p.number);
+      this.log(`CTO session started: ${sessionName}`);
+    } catch (err) {
+      this.logError("Failed to spawn CTO", err);
+    }
+  }
+
   private async assignNewWork(): Promise<void> {
     const config = this.deps.config.project;
 
@@ -292,8 +432,18 @@ export class PMRole {
     issues = this.deps.issues.prioritize(issues);
     this.status.issuesInQueue = issues.length;
 
+    // Check night shift for elevated concurrency
+    let spawnOverrides: { maxProjectSessions?: number } | undefined;
+    if (this.deps.nightShift) {
+      const decision = this.deps.nightShift.shouldSpawn();
+      if (decision.allowed) {
+        this.log(`Night shift active: ${decision.reason} (max concurrent: ${decision.maxConcurrent})`);
+        spawnOverrides = { maxProjectSessions: decision.maxConcurrent };
+      }
+    }
+
     for (const issue of issues) {
-      const capacity = this.deps.hr.canSpawn();
+      const capacity = this.deps.hr.canSpawn(spawnOverrides);
       if (!capacity.canSpawn) {
         this.log(`Cannot spawn: ${capacity.reason}`);
         break;
@@ -307,20 +457,22 @@ export class PMRole {
       .filter((s) => s.role === "developer").length;
   }
 
-  private async spawnDeveloper(issueNumber: number): Promise<void> {
+  private async spawnDeveloper(issueNumber: number, prNumber?: number): Promise<void> {
     const config = this.deps.config.project;
     const projectName = this.getProjectName();
 
     if (this.deps.dryRun) {
-      this.log(`[DRY RUN] Would spawn developer for issue #${issueNumber}`);
+      this.log(`[DRY RUN] Would spawn developer for issue #${issueNumber}${prNumber ? ` (revision of PR #${prNumber})` : ""}`);
       return;
     }
 
     try {
-      try {
-        await this.deps.issues.markInProgress(issueNumber);
-      } catch {
-        // Non-fatal
+      if (!prNumber) {
+        try {
+          await this.deps.issues.markInProgress(issueNumber);
+        } catch {
+          // Non-fatal
+        }
       }
 
       const ghToken = config.project.gh_token_env
@@ -333,6 +485,7 @@ export class PMRole {
         repo: config.project.repo,
         repoRoot: this.deps.projectRoot,
         ghToken,
+        prNumber,
       });
 
       this.deps.hr.recordSessionStart({
@@ -345,7 +498,7 @@ export class PMRole {
         started_at: new Date().toISOString(),
       });
 
-      this.log(`Spawned developer session: ${sessionName}`);
+      this.log(`Spawned developer session: ${sessionName}${prNumber ? ` (revision of PR #${prNumber})` : ""}`);
     } catch (err) {
       this.logError(`Failed to spawn developer for issue #${issueNumber}`, err);
     }
@@ -367,7 +520,7 @@ export class PMRole {
       return;
     }
 
-    await this.spawnDeveloper(payload.issue_number);
+    await this.spawnDeveloper(payload.issue_number, payload.pr_number);
   }
 
   private async checkBackpressure(): Promise<string | null> {
@@ -394,6 +547,11 @@ export class PMRole {
     }
 
     return null;
+  }
+
+  extractIssueNumber(pr: { headBranch: string }): number | null {
+    const match = pr.headBranch.match(/issue-(\d+)/);
+    return match ? parseInt(match[1], 10) : null;
   }
 
   private getProjectName(): string {

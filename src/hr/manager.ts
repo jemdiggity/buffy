@@ -18,15 +18,17 @@ export class HRManager {
     this.options = options;
   }
 
-  canSpawn(): CapacityCheck {
+  canSpawn(overrides?: { maxProjectSessions?: number }): CapacityCheck {
     const projectSessions = this.getActiveSessionCount(this.options.project);
     const totalSessions = this.getActiveSessionCount();
     const dailyCost = this.getEstimatedDailyCost();
 
-    if (projectSessions >= this.options.maxProjectSessions) {
+    const maxProject = overrides?.maxProjectSessions ?? this.options.maxProjectSessions;
+
+    if (projectSessions >= maxProject) {
       return {
         canSpawn: false,
-        reason: `Project session limit reached (${projectSessions}/${this.options.maxProjectSessions})`,
+        reason: `Project session limit reached (${projectSessions}/${maxProject})`,
         activeProjectSessions: projectSessions,
         activeTotalSessions: totalSessions,
         estimatedDailyCostUsd: dailyCost,

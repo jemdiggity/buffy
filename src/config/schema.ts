@@ -36,6 +36,8 @@ export interface NightShiftSection {
   start_hour: number;
   end_hour: number;
   safety_margin_percent: number;
+  weekly_session_minutes_limit: number;
+  max_concurrent_developers: number;
 }
 
 export interface ProjectConfig {

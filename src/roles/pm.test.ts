@@ -76,6 +76,9 @@ function createMockDeps(overrides?: Partial<PMDependencies>): PMDependencies {
       removeLabel: vi.fn().mockResolvedValue(undefined),
       isMerged: vi.fn().mockResolvedValue(false),
       isClosed: vi.fn().mockResolvedValue(false),
+      getReviewDecision: vi.fn().mockResolvedValue(null),
+      getReviews: vi.fn().mockResolvedValue([]),
+      mergePR: vi.fn().mockResolvedValue(undefined),
     } as any,
     issues: {
       fetchReadyIssues: vi.fn().mockResolvedValue([]),
@@ -91,6 +94,12 @@ function createMockDeps(overrides?: Partial<PMDependencies>): PMDependencies {
       isRunning: vi.fn().mockResolvedValue(false),
       buildPrompt: vi.fn().mockReturnValue("test prompt"),
       sessionName: vi.fn((p: string, n: number) => `buffy-${p}-dev-${n}`),
+    } as any,
+    cto: {
+      spawn: vi.fn().mockResolvedValue("buffy-test-project-cto"),
+      isRunning: vi.fn().mockResolvedValue(false),
+      buildPrompt: vi.fn().mockReturnValue("cto prompt"),
+      sessionName: vi.fn((p: string) => `buffy-${p}-cto`),
     } as any,
     projectRoot: "/tmp/test-project",
     dryRun: false,
@@ -297,5 +306,165 @@ describe("PMRole", () => {
     // Session should still be active
     const active = deps.hr.getActiveSessions("test-project");
     expect(active).toHaveLength(1);
+  });
+
+  describe("CTO integration", () => {
+    it("spawns CTO when needs-cto-review PRs exist", async () => {
+      const deps = createMockDeps();
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      (deps.prs.getReviewDecision as any).mockResolvedValue(null);
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+
+      expect(deps.cto!.spawn).toHaveBeenCalled();
+      expect(pm.getStatus().ctoRunning).toBe(true);
+    });
+
+    it("does not spawn CTO when already running", async () => {
+      const deps = createMockDeps();
+      (deps.cto!.isRunning as any).mockResolvedValue(true);
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [{ number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: [] }];
+        }
+        return [];
+      });
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+
+      expect(deps.cto!.spawn).not.toHaveBeenCalled();
+    });
+
+    it("does not spawn CTO in dry run mode", async () => {
+      const deps = createMockDeps({ dryRun: true });
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [{ number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: [] }];
+        }
+        return [];
+      });
+      (deps.prs.getReviewDecision as any).mockResolvedValue(null);
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+
+      expect(deps.cto!.spawn).not.toHaveBeenCalled();
+    });
+
+    it("handles CTO review outcomes — spawns revision developer on CHANGES_REQUESTED", async () => {
+      const deps = createMockDeps();
+      // CTO is not running (finished reviewing)
+      (deps.cto!.isRunning as any).mockResolvedValue(false);
+
+      // PR still has needs-cto-review label with CHANGES_REQUESTED
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      (deps.prs.getReviewDecision as any).mockResolvedValue("CHANGES_REQUESTED");
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+
+      // Should have removed the label before spawning revision developer
+      expect(deps.prs.removeLabel).toHaveBeenCalledWith(10, "needs-cto-review");
+
+      // Should have spawned a revision developer with prNumber
+      expect(deps.developer.spawn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          issueNumber: 42,
+          prNumber: 10,
+        })
+      );
+    });
+
+    it("flags issue for human after exceeding max revisions", async () => {
+      const deps = createMockDeps();
+      (deps.cto!.isRunning as any).mockResolvedValue(false);
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      (deps.prs.getReviewDecision as any).mockResolvedValue("CHANGES_REQUESTED");
+
+      const pm = new PMRole(deps);
+
+      // Run cycles to exhaust revisions (max_revisions = 2)
+      await pm.runCycle();
+      // Reset mock to simulate the label being re-added
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      await pm.runCycle();
+
+      // Third time should exceed max_revisions (2)
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      await pm.runCycle();
+
+      // Should flag for human
+      expect(deps.issues.addLabel).toHaveBeenCalledWith(42, "needs-help");
+    });
+
+    it("detects dead CTO sessions", async () => {
+      const deps = createMockDeps();
+      deps.hr.recordSessionStart({
+        project: "test-project",
+        role: "cto",
+        tmux_session: "buffy-test-project-cto",
+        started_at: new Date().toISOString(),
+      });
+
+      (deps.tmux.isSessionAlive as any).mockResolvedValue(false);
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+
+      const active = deps.hr.getActiveSessions("test-project");
+      expect(active).toHaveLength(0);
+      expect(pm.getStatus().ctoRunning).toBe(false);
+    });
+  });
+
+  describe("extractIssueNumber", () => {
+    it("extracts issue number from branch name", () => {
+      const pm = new PMRole(createMockDeps());
+      expect(pm.extractIssueNumber({ headBranch: "buffy/issue-42" })).toBe(42);
+      expect(pm.extractIssueNumber({ headBranch: "fix/issue-142/auth" })).toBe(142);
+    });
+
+    it("returns null when no issue number in branch", () => {
+      const pm = new PMRole(createMockDeps());
+      expect(pm.extractIssueNumber({ headBranch: "feature/auth" })).toBeNull();
+      expect(pm.extractIssueNumber({ headBranch: "main" })).toBeNull();
+    });
   });
 });

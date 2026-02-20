@@ -29,7 +29,7 @@ describe("CTORole", () => {
   ];
 
   describe("buildPrompt", () => {
-    it("includes repo name and PR details", () => {
+    it("includes repo name and PR details in sections", () => {
       const prompt = cto.buildPrompt("owner/repo", mockPRs);
       expect(prompt).toContain("owner/repo");
       expect(prompt).toContain("PR #42");
@@ -38,10 +38,25 @@ describe("CTORole", () => {
       expect(prompt).toContain("Add webhook retry logic");
     });
 
-    it("includes branch names", () => {
+    it("includes branch names in PR sections", () => {
       const prompt = cto.buildPrompt("owner/repo", mockPRs);
       expect(prompt).toContain("buffy/issue-10");
       expect(prompt).toContain("buffy/issue-11");
+    });
+
+    it("generates per-PR review commands", () => {
+      const prompt = cto.buildPrompt("owner/repo", mockPRs);
+      expect(prompt).toContain("gh pr diff 42");
+      expect(prompt).toContain("gh pr diff 43");
+      expect(prompt).toContain("gh pr review 42 --approve");
+      expect(prompt).toContain("gh pr review 43 --approve");
+    });
+
+    it("includes author and URL for each PR", () => {
+      const prompt = cto.buildPrompt("owner/repo", mockPRs);
+      expect(prompt).toContain("Author: buffy-dev");
+      expect(prompt).toContain("https://github.com/owner/repo/pull/42");
+      expect(prompt).toContain("https://github.com/owner/repo/pull/43");
     });
   });
 

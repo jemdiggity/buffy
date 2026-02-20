@@ -11,6 +11,13 @@ export interface PRInfo {
   author: string;
 }
 
+export interface PRReview {
+  author: string;
+  state: string;
+  body: string;
+  submittedAt: string;
+}
+
 export class PRManager {
   private cwd: string;
   private env: Record<string, string>;
@@ -142,5 +149,46 @@ export class PRManager {
   async isClosed(prNumber: number): Promise<boolean> {
     const pr = await this.getPR(prNumber);
     return pr.state === "CLOSED" || pr.state === "MERGED";
+  }
+
+  async getReviewDecision(prNumber: number): Promise<string | null> {
+    try {
+      const { stdout } = await execa(
+        "gh",
+        ["pr", "view", String(prNumber), "--json", "reviewDecision"],
+        { cwd: this.cwd, env: { ...process.env, ...this.env } }
+      );
+      const data = JSON.parse(stdout);
+      return data.reviewDecision || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getReviews(prNumber: number): Promise<PRReview[]> {
+    try {
+      const { stdout } = await execa(
+        "gh",
+        ["pr", "view", String(prNumber), "--json", "reviews"],
+        { cwd: this.cwd, env: { ...process.env, ...this.env } }
+      );
+      const data = JSON.parse(stdout);
+      return (data.reviews as any[] ?? []).map((r: any) => ({
+        author: r.author?.login ?? "unknown",
+        state: r.state,
+        body: r.body ?? "",
+        submittedAt: r.submittedAt ?? "",
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async mergePR(prNumber: number): Promise<void> {
+    await execa(
+      "gh",
+      ["pr", "merge", String(prNumber), "--squash", "--delete-branch"],
+      { cwd: this.cwd, env: { ...process.env, ...this.env } }
+    );
   }
 }

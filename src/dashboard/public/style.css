@@ -1,0 +1,121 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #1a1b26;
+  color: #a9b1d6;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: #24283b;
+  border-bottom: 1px solid #3b4261;
+}
+
+header h1 {
+  color: #bb9af7;
+  font-size: 18px;
+}
+
+.subtitle {
+  color: #565f89;
+  font-size: 14px;
+}
+
+.back-link {
+  margin-left: auto;
+  color: #7aa2f7;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+main.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 24px;
+  max-width: 1200px;
+}
+
+.card {
+  background: #24283b;
+  border: 1px solid #3b4261;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.card h2 {
+  color: #7dcfff;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #3b4261;
+}
+
+.role-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.role-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #565f89;
+}
+
+.role-dot.active {
+  background: #9ece6a;
+}
+
+.role-name {
+  color: #c0caf5;
+  font-weight: bold;
+  min-width: 80px;
+}
+
+.role-status {
+  color: #565f89;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.stat-label {
+  color: #565f89;
+}
+
+.stat-value {
+  color: #c0caf5;
+}
+
+.session-link {
+  display: block;
+  color: #7aa2f7;
+  text-decoration: none;
+  padding: 4px 0;
+}
+
+.session-link:hover {
+  text-decoration: underline;
+  color: #89b4fa;
+}
