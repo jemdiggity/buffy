@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "bun build src/index.ts --compile --outfile buffy",
+    "build:tsc": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
