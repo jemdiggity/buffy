@@ -48,7 +48,7 @@ describe("WorktreeManager", () => {
     expect(worktrees).toHaveLength(1);
     expect(worktrees[0]!.issueNumber).toBe(42);
 
-    await manager.removeWorktree(42);
+    await manager.removeWorktree(worktrees[0]!);
     const existsAfter = await manager.worktreeExists(42);
     expect(existsAfter).toBe(false);
   });

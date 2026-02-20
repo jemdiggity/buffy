@@ -4,6 +4,8 @@ export interface SessionRecord {
   role: string; // "pm" | "cto" | "developer"
   issue_number?: number;
   tmux_session: string;
+  worktree_path?: string;
+  worktree_branch?: string;
   started_at: string; // ISO 8601
   ended_at?: string; // ISO 8601
   estimated_cost_usd?: number;

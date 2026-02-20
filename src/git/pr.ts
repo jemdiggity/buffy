@@ -98,6 +98,42 @@ export class PRManager {
     );
   }
 
+  async findByBranch(branch: string): Promise<PRInfo | null> {
+    try {
+      const { stdout } = await execa(
+        "gh",
+        [
+          "pr",
+          "list",
+          "--head",
+          branch,
+          "--state",
+          "all",
+          "--json",
+          "number,title,state,isDraft,labels,headRefName,url,author",
+          "--limit",
+          "1",
+        ],
+        { cwd: this.cwd, env: { ...process.env, ...this.env } }
+      );
+      const raw = JSON.parse(stdout) as any[];
+      if (raw.length === 0) return null;
+      const pr = raw[0];
+      return {
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        draft: pr.isDraft,
+        labels: (pr.labels as any[]).map((l: any) => l.name),
+        headBranch: pr.headRefName,
+        url: pr.url,
+        author: pr.author?.login ?? "unknown",
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async isMerged(prNumber: number): Promise<boolean> {
     const pr = await this.getPR(prNumber);
     return pr.state === "MERGED";

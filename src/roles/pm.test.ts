@@ -15,6 +15,8 @@ function createTestDb(): Database.Database {
       role TEXT NOT NULL,
       issue_number INTEGER,
       tmux_session TEXT NOT NULL,
+      worktree_path TEXT,
+      worktree_branch TEXT,
       started_at TEXT NOT NULL,
       ended_at TEXT,
       estimated_cost_usd REAL
@@ -70,6 +72,7 @@ function createMockDeps(overrides?: Partial<PMDependencies>): PMDependencies {
       listByLabel: vi.fn().mockResolvedValue([]),
       getPR: vi.fn().mockResolvedValue({}),
       getDiff: vi.fn().mockResolvedValue(""),
+      findByBranch: vi.fn().mockResolvedValue(null),
       addLabel: vi.fn().mockResolvedValue(undefined),
       removeLabel: vi.fn().mockResolvedValue(undefined),
       isMerged: vi.fn().mockResolvedValue(false),

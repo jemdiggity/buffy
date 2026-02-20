@@ -63,14 +63,16 @@ export class HRManager {
 
   recordSessionStart(session: Omit<SessionRecord, "id" | "ended_at" | "estimated_cost_usd">): number {
     const stmt = this.db.prepare(
-      `INSERT INTO sessions (project, role, issue_number, tmux_session, started_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO sessions (project, role, issue_number, tmux_session, worktree_path, worktree_branch, started_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     const result = stmt.run(
       session.project,
       session.role,
       session.issue_number ?? null,
       session.tmux_session,
+      session.worktree_path ?? null,
+      session.worktree_branch ?? null,
       session.started_at
     );
     return Number(result.lastInsertRowid);

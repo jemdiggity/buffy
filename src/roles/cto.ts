@@ -61,9 +61,12 @@ export class CTORole {
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.cwd,
-      command: `claude "$(cat ${promptFile})"`,
+      command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
       env,
     });
+
+    // Auto-accept the workspace trust prompt
+    await this.tmux.autoAcceptTrust(sessionName);
 
     return sessionName;
   }

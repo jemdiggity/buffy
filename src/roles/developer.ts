@@ -58,9 +58,12 @@ export class DeveloperRole {
       // Interactive mode (no -p flag) so the session is attachable via tmux.
       // Permission prompts are visible and answerable if a human attaches.
       // .claude/settings.json pre-approves common tools automatically.
-      command: `claude "$(cat ${promptFile})"`,
+      command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
       env,
     });
+
+    // Auto-accept the workspace trust prompt (defaults to "Yes, I trust this folder")
+    await this.tmux.autoAcceptTrust(sessionName);
 
     return sessionName;
   }

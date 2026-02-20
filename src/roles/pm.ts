@@ -88,9 +88,6 @@ export class PMRole {
       await this.processMessages();
       await this.checkCompletedSessions();
 
-      this.status.state = "cleaning";
-      await this.cleanupMergedPRs();
-
       this.status.state = "spawning";
       await this.assignNewWork();
 
@@ -149,26 +146,20 @@ export class PMRole {
             // Label may already be removed
           }
         }
-      }
-    }
-  }
 
-  private async cleanupMergedPRs(): Promise<void> {
-    const worktrees = await this.deps.worktrees.listWorktrees();
-
-    for (const wt of worktrees) {
-      try {
-        const prs = await this.deps.prs.listByLabel(LABELS.CTO_APPROVED);
-        const pr = prs.find((p) => p.headBranch === wt.branch);
-
-        if (pr && (pr.state === "MERGED" || pr.state === "CLOSED")) {
-          this.log(`Cleaning up worktree for merged/closed PR #${pr.number} (issue #${wt.issueNumber})`);
-          if (!this.deps.dryRun) {
-            await this.deps.worktrees.removeWorktree(wt.issueNumber);
+        // Clean up the worktree — branch is on the remote now
+        if (session.worktree_path && session.worktree_branch) {
+          try {
+            await this.deps.worktrees.removeWorktree({
+              path: session.worktree_path,
+              branch: session.worktree_branch,
+              issueNumber: session.issue_number!,
+            });
+            this.log(`Removed worktree for issue #${session.issue_number}`);
+          } catch {
+            // Non-fatal
           }
         }
-      } catch {
-        // PR may not exist or API error
       }
     }
   }
@@ -191,18 +182,15 @@ export class PMRole {
       return;
     }
 
+    // Filter out issues that already have an active session
     const activeSessions = this.deps.hr.getActiveSessions(this.getProjectName());
     const activeIssueNumbers = new Set(
       activeSessions.filter((s) => s.issue_number != null).map((s) => s.issue_number)
     );
-    const existingWorktrees = await this.deps.worktrees.listWorktrees();
-    const worktreeIssueNumbers = new Set(existingWorktrees.map((w) => w.issueNumber));
 
-    this.log(`Active issues: [${[...activeIssueNumbers]}], worktree issues: [${[...worktreeIssueNumbers]}]`);
+    this.log(`Active issues: [${[...activeIssueNumbers]}]`);
 
-    issues = issues.filter(
-      (i) => !activeIssueNumbers.has(i.number) && !worktreeIssueNumbers.has(i.number)
-    );
+    issues = issues.filter((i) => !activeIssueNumbers.has(i.number));
     this.log(`After filtering: ${issues.length} issue(s) to assign`);
 
     issues = this.deps.issues.prioritize(issues);
@@ -261,6 +249,8 @@ export class PMRole {
         role: "developer",
         issue_number: issueNumber,
         tmux_session: sessionName,
+        worktree_path: wtInfo.path,
+        worktree_branch: wtInfo.branch,
         started_at: new Date().toISOString(),
       });
 

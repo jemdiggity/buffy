@@ -80,4 +80,15 @@ export class TmuxManager {
   async isSessionAlive(name: string): Promise<boolean> {
     return this.sessionExists(name);
   }
+
+  async autoAcceptTrust(sessionName: string, delayMs: number = 2000): Promise<void> {
+    // Wait for Claude Code to render the workspace trust prompt, then send Enter
+    // to accept the default "Yes, I trust this folder" option.
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      await execa("tmux", ["send-keys", "-t", sessionName, "Enter"]);
+    } catch {
+      // Session may have exited or trust was already accepted
+    }
+  }
 }

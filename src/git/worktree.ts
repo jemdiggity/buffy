@@ -1,5 +1,5 @@
 import simpleGit, { type SimpleGit } from "simple-git";
-import { resolve, join } from "node:path";
+import { resolve, join, basename } from "node:path";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 
@@ -29,8 +29,8 @@ export class WorktreeManager {
   }
 
   async createWorktree(issueNumber: number, baseBranch: string = "main"): Promise<WorktreeInfo> {
-    const branch = this.branchName(issueNumber);
-    const path = this.worktreePath(issueNumber);
+    // Find a unique path and branch name (don't clobber existing worktrees)
+    const { path, branch } = this.findAvailableSlot(issueNumber);
 
     // Fetch latest from remote
     try {
@@ -44,10 +44,8 @@ export class WorktreeManager {
     const branchExists = branches.all.includes(branch);
 
     if (branchExists) {
-      // Reuse existing branch
       await this.git.raw(["worktree", "add", path, branch]);
     } else {
-      // Create new branch from remote or local base
       try {
         await this.git.raw(["worktree", "add", "-b", branch, path, `origin/${baseBranch}`]);
       } catch {
@@ -58,23 +56,39 @@ export class WorktreeManager {
     return { path, branch, issueNumber };
   }
 
-  async removeWorktree(issueNumber: number): Promise<void> {
-    const path = this.worktreePath(issueNumber);
+  private findAvailableSlot(issueNumber: number): { path: string; branch: string } {
+    const basePath = this.worktreePath(issueNumber);
+    const baseBranch = this.branchName(issueNumber);
 
+    if (!existsSync(basePath)) {
+      return { path: basePath, branch: baseBranch };
+    }
+
+    // Someone's already there — find a free suffix
+    for (let i = 2; i <= 100; i++) {
+      const path = join(this.worktreeBaseDir, `issue-${issueNumber}-${i}`);
+      if (!existsSync(path)) {
+        return { path, branch: `buffy/issue-${issueNumber}-${i}` };
+      }
+    }
+
+    throw new Error(`Too many worktrees for issue #${issueNumber}`);
+  }
+
+  async removeWorktree(worktree: WorktreeInfo): Promise<void> {
+    // Use the worktree directory name, not the absolute path
+    const name = basename(worktree.path);
     try {
-      await this.git.raw(["worktree", "remove", path, "--force"]);
+      await this.git.raw(["worktree", "remove", name, "--force"]);
     } catch {
-      // If worktree remove fails, try manual cleanup
-      if (existsSync(path)) {
-        await rm(path, { recursive: true, force: true });
+      if (existsSync(worktree.path)) {
+        await rm(worktree.path, { recursive: true, force: true });
         await this.git.raw(["worktree", "prune"]);
       }
     }
 
-    // Delete the branch
-    const branch = this.branchName(issueNumber);
     try {
-      await this.git.branch(["-D", branch]);
+      await this.git.branch(["-D", worktree.branch]);
     } catch {
       // Branch may not exist
     }
@@ -95,8 +109,8 @@ export class WorktreeManager {
       const path = pathLine.slice("worktree ".length);
       const branch = branchLine.slice("branch refs/heads/".length);
 
-      // Only include buffy worktrees
-      const match = branch.match(/^buffy\/issue-(\d+)$/);
+      // Only include buffy worktrees (issue-123 or issue-123-2)
+      const match = branch.match(/^buffy\/issue-(\d+)(-\d+)?$/);
       if (match) {
         worktrees.push({
           path,
@@ -117,7 +131,7 @@ export class WorktreeManager {
   async removeAll(): Promise<number> {
     const worktrees = await this.listWorktrees();
     for (const wt of worktrees) {
-      await this.removeWorktree(wt.issueNumber);
+      await this.removeWorktree(wt);
     }
     return worktrees.length;
   }
