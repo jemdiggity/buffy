@@ -434,6 +434,107 @@ describe("PMRole", () => {
       expect(deps.issues.addLabel).toHaveBeenCalledWith(42, "needs-help");
     });
 
+    it("kills CTO session when all assigned PRs are reviewed", async () => {
+      const deps = createMockDeps();
+
+      // First cycle: CTO not running, PRs available → spawn CTO
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+            { number: 11, title: "Add feature", headBranch: "buffy/issue-43", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      (deps.prs.getReviewDecision as any).mockResolvedValue(null);
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+      expect(deps.cto!.spawn).toHaveBeenCalled();
+      expect(pm.getStatus().ctoReviewing).toEqual([10, 11]);
+
+      // Now CTO is "running" — both tmux session and cto.isRunning report alive
+      // After killSession is called, isRunning should return false (session is dead)
+      let ctoKilled = false;
+      (deps.tmux.killSession as any).mockImplementation(() => { ctoKilled = true; });
+      (deps.cto!.isRunning as any).mockImplementation(() => !ctoKilled);
+      (deps.tmux.isSessionAlive as any).mockImplementation(() => !ctoKilled);
+
+      // CTO has finished reviewing — PRs no longer have needs-cto-review label
+      (deps.prs.listByLabel as any).mockResolvedValue([]);
+      (deps.prs.getPR as any).mockImplementation((prNumber: number) => {
+        if (prNumber === 10) return { number: 10, labels: ["cto-approved"] };
+        if (prNumber === 11) return { number: 11, labels: ["cto-approved"] };
+        return { number: prNumber, labels: [] };
+      });
+
+      await pm.runCycle();
+
+      // CTO session should be killed
+      expect(deps.tmux.killSession).toHaveBeenCalledWith("buffy-test-project-cto");
+      expect(pm.getStatus().ctoRunning).toBe(false);
+      expect(pm.getStatus().ctoReviewing).toEqual([]);
+    });
+
+    it("does not kill CTO session when PRs are still pending review", async () => {
+      const deps = createMockDeps();
+
+      // Spawn CTO first
+      (deps.prs.listByLabel as any).mockImplementation((label: string) => {
+        if (label === "needs-cto-review") {
+          return [
+            { number: 10, title: "Fix bug", headBranch: "buffy/issue-42", author: "dev", url: "", state: "OPEN", draft: true, labels: ["needs-cto-review"] },
+          ];
+        }
+        return [];
+      });
+      (deps.prs.getReviewDecision as any).mockResolvedValue(null);
+
+      const pm = new PMRole(deps);
+      await pm.runCycle();
+      expect(deps.cto!.spawn).toHaveBeenCalled();
+
+      // CTO is now running, PR still has the label
+      (deps.cto!.isRunning as any).mockResolvedValue(true);
+      (deps.prs.getPR as any).mockResolvedValue({
+        number: 10,
+        labels: ["needs-cto-review"],
+      });
+
+      await pm.runCycle();
+
+      // CTO session should NOT be killed
+      expect(deps.tmux.killSession).not.toHaveBeenCalled();
+      expect(pm.getStatus().ctoRunning).toBe(true);
+    });
+
+    it("kills stale CTO session when no PRs need review", async () => {
+      const deps = createMockDeps();
+
+      // Stale CTO tmux session is alive (from a previous run)
+      (deps.cto!.isRunning as any).mockResolvedValue(true);
+      (deps.tmux.isSessionAlive as any).mockResolvedValue(true);
+
+      // No PRs need CTO review
+      (deps.prs.listByLabel as any).mockResolvedValue([]);
+
+      const pm = new PMRole(deps);
+      // ctoReviewing is empty (fresh PM, doesn't know what stale CTO was doing)
+      expect(pm.getStatus().ctoReviewing).toEqual([]);
+
+      let ctoKilled = false;
+      (deps.tmux.killSession as any).mockImplementation(() => { ctoKilled = true; });
+      (deps.cto!.isRunning as any).mockImplementation(() => !ctoKilled);
+      (deps.tmux.isSessionAlive as any).mockImplementation(() => !ctoKilled);
+
+      await pm.runCycle();
+
+      // Stale CTO session should be killed
+      expect(deps.tmux.killSession).toHaveBeenCalledWith("buffy-test-project-cto");
+      expect(pm.getStatus().ctoRunning).toBe(false);
+    });
+
     it("detects dead CTO sessions", async () => {
       const deps = createMockDeps();
       deps.hr.recordSessionStart({

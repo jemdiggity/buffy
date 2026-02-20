@@ -98,6 +98,7 @@ export class PMRole {
 
       await this.processMessages();
       await this.checkCompletedSessions();
+      await this.checkCTOCompletion();
       await this.checkDeveloperCompletion();
       await this.handleCTOReviewOutcomes();
       await this.maybeSpawnCTO();
@@ -248,6 +249,49 @@ export class PMRole {
     }
   }
 
+  private async checkCTOCompletion(): Promise<void> {
+    if (!this.deps.cto) return;
+
+    const projectName = this.getProjectName();
+    const ctoRunning = await this.deps.cto.isRunning(projectName);
+    if (!ctoRunning) return;
+
+    let stillPending = false;
+
+    if (this.status.ctoReviewing.length > 0) {
+      // We know which PRs the CTO was assigned — check if they're done
+      for (const prNumber of this.status.ctoReviewing) {
+        try {
+          const pr = await this.deps.prs.getPR(prNumber);
+          if (pr.labels.includes(LABELS.NEEDS_CTO_REVIEW)) {
+            stillPending = true;
+            break;
+          }
+        } catch {
+          stillPending = true;
+          break;
+        }
+      }
+    } else {
+      // We don't know which PRs the CTO was reviewing (stale session or restart).
+      // Check if ANY PRs still need CTO review — if none, there's nothing to do.
+      try {
+        const prsNeedingReview = await this.deps.prs.listByLabel(LABELS.NEEDS_CTO_REVIEW);
+        stillPending = prsNeedingReview.length > 0;
+      } catch {
+        stillPending = true;
+      }
+    }
+
+    if (!stillPending) {
+      this.log("CTO has finished reviewing all PRs, killing session");
+      const sessionName = this.deps.cto.sessionName(projectName);
+      await this.deps.tmux.killSession(sessionName);
+      this.status.ctoRunning = false;
+      this.status.ctoReviewing = [];
+    }
+  }
+
   private async handleCTOReviewOutcomes(): Promise<void> {
     if (!this.deps.cto) return;
 
@@ -309,6 +353,10 @@ export class PMRole {
       this.status.ctoRunning = true;
       return;
     }
+
+    // CTO is not running — reset status
+    this.status.ctoRunning = false;
+    this.status.ctoReviewing = [];
 
     // Check for PRs needing CTO review
     let prsToReview;
