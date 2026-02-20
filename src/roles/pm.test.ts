@@ -172,4 +172,79 @@ describe("PMRole", () => {
     const active = deps.hr.getActiveSessions("test-project");
     expect(active).toHaveLength(0);
   });
+
+  it("detects completed developers by PR and kills session", async () => {
+    const deps = createMockDeps();
+    deps.hr.recordSessionStart({
+      project: "test-project",
+      role: "developer",
+      issue_number: 42,
+      tmux_session: "buffy-test-project-dev-42",
+      worktree_path: "/tmp/wt/issue-42",
+      worktree_branch: "buffy/issue-42",
+      started_at: new Date().toISOString(),
+    });
+
+    // Session is still alive (Claude Code waiting for input)
+    (deps.tmux.isSessionAlive as any).mockResolvedValue(true);
+
+    // PR exists for the branch
+    (deps.prs.findByBranch as any).mockResolvedValue({
+      number: 10,
+      title: "Fix bug",
+      state: "OPEN",
+      draft: true,
+      labels: ["needs-cto-review"],
+      headBranch: "buffy/issue-42",
+      url: "https://github.com/owner/test-project/pull/10",
+      author: "buffy",
+    });
+
+    const pm = new PMRole(deps);
+    await pm.runCycle();
+
+    // Session should be killed
+    expect(deps.tmux.killSession).toHaveBeenCalledWith("buffy-test-project-dev-42");
+
+    // Session record should be ended
+    const active = deps.hr.getActiveSessions("test-project");
+    expect(active).toHaveLength(0);
+
+    // Worktree should be cleaned up
+    expect(deps.worktrees.removeWorktree).toHaveBeenCalledWith({
+      path: "/tmp/wt/issue-42",
+      branch: "buffy/issue-42",
+      issueNumber: 42,
+    });
+
+    // In-progress label should be removed
+    expect(deps.issues.removeLabel).toHaveBeenCalledWith(42, "in-progress");
+  });
+
+  it("does not kill session when no PR exists for branch", async () => {
+    const deps = createMockDeps();
+    deps.hr.recordSessionStart({
+      project: "test-project",
+      role: "developer",
+      issue_number: 42,
+      tmux_session: "buffy-test-project-dev-42",
+      worktree_path: "/tmp/wt/issue-42",
+      worktree_branch: "buffy/issue-42",
+      started_at: new Date().toISOString(),
+    });
+
+    // Session is alive and no PR exists yet
+    (deps.tmux.isSessionAlive as any).mockResolvedValue(true);
+    (deps.prs.findByBranch as any).mockResolvedValue(null);
+
+    const pm = new PMRole(deps);
+    await pm.runCycle();
+
+    // Session should NOT be killed
+    expect(deps.tmux.killSession).not.toHaveBeenCalled();
+
+    // Session should still be active
+    const active = deps.hr.getActiveSessions("test-project");
+    expect(active).toHaveLength(1);
+  });
 });

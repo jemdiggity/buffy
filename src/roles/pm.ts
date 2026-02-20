@@ -87,6 +87,7 @@ export class PMRole {
 
       await this.processMessages();
       await this.checkCompletedSessions();
+      await this.checkDeveloperCompletion();
 
       this.status.state = "spawning";
       await this.assignNewWork();
@@ -159,6 +160,53 @@ export class PMRole {
           } catch {
             // Non-fatal
           }
+        }
+      }
+    }
+  }
+
+  private async checkDeveloperCompletion(): Promise<void> {
+    const projectName = this.getProjectName();
+    const sessions = this.deps.hr.getActiveSessions(projectName);
+
+    for (const session of sessions) {
+      if (session.role !== "developer") continue;
+      if (!session.worktree_branch) continue;
+
+      // Skip sessions that are already dead (handled by checkCompletedSessions)
+      const alive = await this.deps.tmux.isSessionAlive(session.tmux_session);
+      if (!alive) continue;
+
+      // Check if a PR exists for this branch — if so, the developer is done
+      const pr = await this.deps.prs.findByBranch(session.worktree_branch);
+      if (!pr) continue;
+
+      this.log(`Developer session ${session.tmux_session} has opened PR #${pr.number}, cleaning up`);
+
+      await this.deps.tmux.killSession(session.tmux_session);
+
+      if (session.id != null) {
+        this.deps.hr.recordSessionEnd(session.id);
+      }
+
+      if (session.issue_number) {
+        try {
+          await this.deps.issues.removeLabel(session.issue_number, LABELS.IN_PROGRESS);
+        } catch {
+          // Label may already be removed
+        }
+      }
+
+      if (session.worktree_path && session.worktree_branch) {
+        try {
+          await this.deps.worktrees.removeWorktree({
+            path: session.worktree_path,
+            branch: session.worktree_branch,
+            issueNumber: session.issue_number!,
+          });
+          this.log(`Removed worktree for issue #${session.issue_number}`);
+        } catch {
+          // Non-fatal
         }
       }
     }
