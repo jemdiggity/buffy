@@ -203,13 +203,17 @@ export class PMRole {
       const alive = await this.deps.tmux.isSessionAlive(session.tmux_session);
       if (!alive) continue;
 
-      // Discover the branch if we don't know it yet
-      let branch = session.worktree_branch;
-      if (!branch && session.issue_number) {
-        const worktreePath = session.worktree_path ??
-          this.deps.worktrees.claudeWorktreePath(session.issue_number);
+      // Discover the branch from the worktree.
+      // Always re-discover: the developer may have created a new branch after
+      // the initial worktree branch (e.g., Claude -w creates "worktree-issue-N"
+      // initially, then the developer creates "feat/issue-N-description").
+      const worktreePath = session.worktree_path ??
+        (session.issue_number ? this.deps.worktrees.claudeWorktreePath(session.issue_number) : null);
+
+      let branch: string | null = null;
+      if (worktreePath) {
         branch = await this.deps.worktrees.discoverBranch(worktreePath);
-        if (branch && session.id != null) {
+        if (branch && branch !== session.worktree_branch && session.id != null) {
           this.deps.hr.updateSessionBranch(session.id, branch);
         }
       }
@@ -313,7 +317,18 @@ export class PMRole {
 
     for (const pr of prsNeedingReview) {
       const decision = await this.deps.prs.getReviewDecision(pr.number);
-      if (decision !== "CHANGES_REQUESTED") continue;
+
+      // Detect CTO rejection: either via reviewDecision (cross-account) or
+      // by checking for a "Changes needed" review comment (same-account,
+      // where GitHub blocks --request-changes on your own PR).
+      let changesRequested = decision === "CHANGES_REQUESTED";
+      if (!changesRequested) {
+        const reviews = await this.deps.prs.getReviews(pr.number);
+        changesRequested = reviews.some(
+          (r) => r.body.startsWith("CTO Review: Changes needed")
+        );
+      }
+      if (!changesRequested) continue;
 
       const issueNumber = this.extractIssueNumber(pr);
       if (!issueNumber) {

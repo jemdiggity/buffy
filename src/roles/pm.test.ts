@@ -195,6 +195,9 @@ describe("PMRole", () => {
     // Session is still alive (Claude Code waiting for input)
     (deps.tmux.isSessionAlive as any).mockResolvedValue(true);
 
+    // discoverBranch returns the current branch in the worktree
+    (deps.worktrees.discoverBranch as any).mockResolvedValue("fix/issue-42");
+
     // PR exists for the branch
     (deps.prs.findByBranch as any).mockResolvedValue({
       number: 10,

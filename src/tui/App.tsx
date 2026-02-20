@@ -106,6 +106,34 @@ export function App({ pm, hr, tmux, prs, projectName, dashboardPort, nightShift,
     exit();
   }, [onQuit, exit]);
 
+  const handleAttach = useCallback((session: string) => {
+    setView("status");
+    // Open tmux session in a new terminal tab
+    import("execa").then(({ execa }) => {
+      if (process.platform === "darwin") {
+        const script = `tell application "Terminal" to do script "tmux attach-session -t ${session}"`;
+        execa("osascript", ["-e", script]).catch(() => {
+          // Fallback: try iTerm2
+          const iterm = `tell application "iTerm2"
+            tell current window
+              create tab with default profile
+              tell current session
+                write text "tmux attach-session -t ${session}"
+              end tell
+            end tell
+          end tell`;
+          execa("osascript", ["-e", iterm]).catch(() => {});
+        });
+      } else {
+        // Linux: try common terminal emulators
+        execa("x-terminal-emulator", ["-e", "tmux", "attach-session", "-t", session])
+          .catch(() => execa("gnome-terminal", ["--", "tmux", "attach-session", "-t", session]))
+          .catch(() => execa("xterm", ["-e", "tmux", "attach-session", "-t", session]))
+          .catch(() => {});
+      }
+    });
+  }, []);
+
   useInput((input, key) => {
     if (view === "status") {
       if (input === "q") {
@@ -127,7 +155,6 @@ export function App({ pm, hr, tmux, prs, projectName, dashboardPort, nightShift,
       } else if (key.downArrow) {
         setSelectedPRIndex((i) => Math.min(approvedPRs.length - 1, i + 1));
       } else if (input === "g" && approvedPRs[selectedPRIndex]) {
-        // Open in browser — fire and forget
         import("execa").then(({ execa }) => {
           execa("gh", ["pr", "view", String(approvedPRs[selectedPRIndex]!.number), "--web"]).catch(() => {});
         });
@@ -139,12 +166,7 @@ export function App({ pm, hr, tmux, prs, projectName, dashboardPort, nightShift,
     return (
       <AttachPicker
         sessions={sessions}
-        onSelect={(session) => {
-          setView("status");
-          import("execa").then(({ execa }) => {
-            execa("tmux", ["attach-session", "-t", session], { stdio: "inherit" }).catch(() => {});
-          });
-        }}
+        onSelect={handleAttach}
         onCancel={() => setView("status")}
       />
     );
