@@ -11,6 +11,7 @@ export interface DeveloperSpawnOptions {
   issueNumber: number;
   repo: string;
   worktreePath: string;
+  branch: string;
   ghToken?: string;
   prTitlePrefix?: string;
 }
@@ -34,6 +35,7 @@ export class DeveloperRole {
     return template
       .replaceAll("{{REPO}}", options.repo)
       .replaceAll("{{ISSUE_NUMBER}}", String(options.issueNumber))
+      .replaceAll("{{BRANCH}}", options.branch)
       .replaceAll("{{PR_TITLE_PREFIX}}", options.prTitlePrefix ?? "");
   }
 
@@ -93,8 +95,9 @@ export class DeveloperRole {
 
 ## Rules
 
+- You are already on branch \`{{BRANCH}}\` in a git worktree — do NOT create or checkout a different branch
+- Push your commits to this branch: \`git push -u origin {{BRANCH}}\`
 - Follow the existing code style and patterns
-- Write tests for new functionality when the project has a test framework
 - Do not modify unrelated code
 - If you encounter a blocker, open the PR with what you have and add the label \`needs-help\`
 - Keep your changes focused on the issue at hand`;

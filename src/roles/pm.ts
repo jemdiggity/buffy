@@ -303,6 +303,7 @@ export class PMRole {
         issueNumber,
         repo: config.project.repo,
         worktreePath: wtInfo.path,
+        branch: wtInfo.branch,
         ghToken,
       });
 

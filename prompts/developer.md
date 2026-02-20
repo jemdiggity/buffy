@@ -14,7 +14,8 @@ gh pr create --draft --title "{{PR_TITLE_PREFIX}}fix: <concise description>" --b
 
 ## Rules
 
-- Your working directory is already set to the correct worktree — use `git` commands directly without `-C` flags
+- You are already on branch `{{BRANCH}}` in a git worktree — do NOT create or checkout a different branch
+- Push your commits to this branch: `git push -u origin {{BRANCH}}`
 - Follow the existing code style and patterns in the repository
 - Write tests for new functionality when the project has a test framework
 - Do not modify unrelated code
