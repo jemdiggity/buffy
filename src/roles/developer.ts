@@ -52,12 +52,12 @@ export class DeveloperRole {
 This is a revision of an existing PR #${prNumber}. The CTO has requested changes.
 
 1. Checkout the existing PR branch: \`gh pr checkout ${prNumber}\`
-2. Read the review comments: \`gh pr view ${prNumber} --comments\`
-3. Read the review feedback: \`gh pr reviews ${prNumber}\`
-4. Address ALL requested changes
-5. Run the project's test suite and fix any failures
-6. Push your fixes: \`git push\`
-7. Re-add the CTO review label: \`gh pr edit ${prNumber} --add-label "needs-cto-review"\`
+2. Read all review comments: \`gh pr view ${prNumber} --comments\`
+3. Read review details: \`gh pr view ${prNumber} --json reviews --jq '.reviews[].body'\`
+4. Address ALL requested changes from the most recent CTO review
+4. Run the project's test suite and fix any failures
+5. Push your fixes: \`git push\`
+6. Re-add the CTO review label: \`gh pr edit ${prNumber} --add-label "needs-cto-review"\`
 
 Do NOT create a new PR — push to the existing branch.`;
   }
