@@ -60,6 +60,9 @@ export class DeveloperRole {
       // Interactive mode (no -p flag) so the session is attachable via tmux.
       // Permission prompts are visible and answerable if a human attaches.
       // .claude/settings.json pre-approves common tools automatically.
+      // TODO: Consider --permission-prompt-tool to handle permission prompts
+      // via an MCP tool instead of autoAcceptTrust + acceptEdits. Would also
+      // allow using -p (non-interactive) mode for fully autonomous sessions.
       command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
       env,
     });
