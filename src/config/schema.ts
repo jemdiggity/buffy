@@ -15,6 +15,7 @@ export interface CTOSection {
   review_label: string;
   approved_label: string;
   max_revisions: number;
+  gh_token_env?: string;
 }
 
 export interface HRSection {

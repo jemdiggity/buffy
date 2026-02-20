@@ -411,9 +411,9 @@ export class PMRole {
     this.log(`Spawning CTO to review ${freshPRs.length} PR(s): ${freshPRs.map((p) => `#${p.number}`).join(", ")}`);
 
     const config = this.deps.config.project;
-    const ghToken = config.project.gh_token_env
-      ? process.env[config.project.gh_token_env]
-      : undefined;
+    // Use CTO-specific token if configured, fall back to project-level token
+    const ctoTokenEnv = config.cto.gh_token_env ?? config.project.gh_token_env;
+    const ghToken = ctoTokenEnv ? process.env[ctoTokenEnv] : undefined;
 
     try {
       const sessionName = await this.deps.cto.spawn(
