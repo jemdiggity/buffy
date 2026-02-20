@@ -221,6 +221,29 @@ describe("PMRole", () => {
     expect(deps.issues.removeLabel).toHaveBeenCalledWith(42, "in-progress");
   });
 
+  it("skips issues that already have a buffy PR open", async () => {
+    const deps = createMockDeps();
+    (deps.issues.fetchReadyIssues as any).mockResolvedValue([
+      { number: 42, title: "Fix bug", labels: ["ready"], state: "open", url: "", assignees: [], createdAt: "2024-01-01" },
+    ]);
+    (deps.issues.prioritize as any).mockImplementation((issues: any[]) => issues);
+
+    // PR already exists for this issue's branch
+    (deps.prs.findByBranch as any).mockResolvedValue({
+      number: 10,
+      title: "Fix bug",
+      state: "OPEN",
+      headBranch: "buffy/issue-42",
+    });
+
+    const pm = new PMRole(deps);
+    await pm.runCycle();
+
+    // Should NOT spawn a developer
+    expect(deps.worktrees.createWorktree).not.toHaveBeenCalled();
+    expect(deps.developer.spawn).not.toHaveBeenCalled();
+  });
+
   it("does not kill session when no PR exists for branch", async () => {
     const deps = createMockDeps();
     deps.hr.recordSessionStart({

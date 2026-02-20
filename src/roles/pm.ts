@@ -239,6 +239,20 @@ export class PMRole {
     this.log(`Active issues: [${[...activeIssueNumbers]}]`);
 
     issues = issues.filter((i) => !activeIssueNumbers.has(i.number));
+
+    // Filter out issues that already have a buffy PR open
+    const filtered: typeof issues = [];
+    for (const issue of issues) {
+      const branch = this.deps.worktrees.branchName(issue.number);
+      const existingPR = await this.deps.prs.findByBranch(branch);
+      if (existingPR) {
+        this.log(`Issue #${issue.number} already has PR #${existingPR.number}, skipping`);
+        continue;
+      }
+      filtered.push(issue);
+    }
+    issues = filtered;
+
     this.log(`After filtering: ${issues.length} issue(s) to assign`);
 
     issues = this.deps.issues.prioritize(issues);

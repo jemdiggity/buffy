@@ -95,6 +95,11 @@ export class IssueManager {
 
   async markInProgress(issueNumber: number): Promise<void> {
     await this.addLabel(issueNumber, LABELS.IN_PROGRESS);
+    try {
+      await this.removeLabel(issueNumber, LABELS.READY);
+    } catch {
+      // Label may not exist
+    }
   }
 
   async clearInProgress(issueNumber: number): Promise<void> {

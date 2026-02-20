@@ -1,7 +1,6 @@
 import simpleGit, { type SimpleGit } from "simple-git";
 import { resolve, join, basename } from "node:path";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
 
 export interface WorktreeInfo {
   path: string;
@@ -76,16 +75,8 @@ export class WorktreeManager {
   }
 
   async removeWorktree(worktree: WorktreeInfo): Promise<void> {
-    // Use the worktree directory name, not the absolute path
     const name = basename(worktree.path);
-    try {
-      await this.git.raw(["worktree", "remove", name, "--force"]);
-    } catch {
-      if (existsSync(worktree.path)) {
-        await rm(worktree.path, { recursive: true, force: true });
-        await this.git.raw(["worktree", "prune"]);
-      }
-    }
+    await this.git.raw(["worktree", "remove", name]);
 
     try {
       await this.git.branch(["-D", worktree.branch]);
