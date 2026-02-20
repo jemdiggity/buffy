@@ -78,6 +78,12 @@ export class HRManager {
     return Number(result.lastInsertRowid);
   }
 
+  updateSessionBranch(sessionId: number, branch: string): void {
+    this.db.prepare(
+      "UPDATE sessions SET worktree_branch = ? WHERE id = ?"
+    ).run(branch, sessionId);
+  }
+
   recordSessionEnd(sessionId: number): void {
     const endedAt = new Date().toISOString();
     const session = this.db.prepare("SELECT started_at FROM sessions WHERE id = ?").get(sessionId) as

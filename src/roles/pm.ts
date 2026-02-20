@@ -148,17 +148,23 @@ export class PMRole {
           }
         }
 
-        // Clean up the worktree — branch is on the remote now
-        if (session.worktree_path && session.worktree_branch) {
+        // Clean up worktree if it still exists (Claude auto-cleans on clean exit,
+        // but if the session was killed or crashed, we clean up manually)
+        if (session.issue_number) {
+          const worktreePath = session.worktree_path ??
+            this.deps.worktrees.claudeWorktreePath(session.issue_number);
+          const branch = session.worktree_branch ??
+            await this.deps.worktrees.discoverBranch(worktreePath);
+
           try {
             await this.deps.worktrees.removeWorktree({
-              path: session.worktree_path,
-              branch: session.worktree_branch,
-              issueNumber: session.issue_number!,
+              path: worktreePath,
+              branch: branch ?? "",
+              issueNumber: session.issue_number,
             });
             this.log(`Removed worktree for issue #${session.issue_number}`);
           } catch {
-            // Non-fatal
+            // Worktree may already be gone (Claude auto-cleaned)
           }
         }
       }
@@ -171,14 +177,26 @@ export class PMRole {
 
     for (const session of sessions) {
       if (session.role !== "developer") continue;
-      if (!session.worktree_branch) continue;
 
       // Skip sessions that are already dead (handled by checkCompletedSessions)
       const alive = await this.deps.tmux.isSessionAlive(session.tmux_session);
       if (!alive) continue;
 
+      // Discover the branch if we don't know it yet
+      let branch = session.worktree_branch;
+      if (!branch && session.issue_number) {
+        const worktreePath = session.worktree_path ??
+          this.deps.worktrees.claudeWorktreePath(session.issue_number);
+        branch = await this.deps.worktrees.discoverBranch(worktreePath);
+        if (branch && session.id != null) {
+          this.deps.hr.updateSessionBranch(session.id, branch);
+        }
+      }
+
+      if (!branch) continue;
+
       // Check if a PR exists for this branch — if so, the developer is done
-      const pr = await this.deps.prs.findByBranch(session.worktree_branch);
+      const pr = await this.deps.prs.findByBranch(branch);
       if (!pr) continue;
 
       this.log(`Developer session ${session.tmux_session} has opened PR #${pr.number}, cleaning up`);
@@ -197,12 +215,14 @@ export class PMRole {
         }
       }
 
-      if (session.worktree_path && session.worktree_branch) {
+      if (session.issue_number) {
+        const worktreePath = session.worktree_path ??
+          this.deps.worktrees.claudeWorktreePath(session.issue_number);
         try {
           await this.deps.worktrees.removeWorktree({
-            path: session.worktree_path,
-            branch: session.worktree_branch,
-            issueNumber: session.issue_number!,
+            path: worktreePath,
+            branch,
+            issueNumber: session.issue_number,
           });
           this.log(`Removed worktree for issue #${session.issue_number}`);
         } catch {
@@ -240,15 +260,29 @@ export class PMRole {
 
     issues = issues.filter((i) => !activeIssueNumbers.has(i.number));
 
-    // Filter out issues that already have a buffy PR open
+    // Filter out issues that already have a worktree on disk (being worked)
+    // or a PR open from a previous run
     const filtered: typeof issues = [];
     for (const issue of issues) {
-      const branch = this.deps.worktrees.branchName(issue.number);
-      const existingPR = await this.deps.prs.findByBranch(branch);
-      if (existingPR) {
-        this.log(`Issue #${issue.number} already has PR #${existingPR.number}, skipping`);
+      // Check if a worktree exists on disk for this issue
+      const worktreePath = this.deps.worktrees.claudeWorktreePath(issue.number);
+      const exists = await this.deps.worktrees.worktreeExists(issue.number);
+      if (exists) {
+        this.log(`Issue #${issue.number} has an existing worktree, skipping`);
         continue;
       }
+
+      // Check if a PR already exists by discovering branch from worktree
+      // (worktree may exist on disk without git tracking if partially cleaned)
+      const branch = await this.deps.worktrees.discoverBranch(worktreePath);
+      if (branch) {
+        const existingPR = await this.deps.prs.findByBranch(branch);
+        if (existingPR) {
+          this.log(`Issue #${issue.number} already has PR #${existingPR.number}, skipping`);
+          continue;
+        }
+      }
+
       filtered.push(issue);
     }
     issues = filtered;
@@ -283,11 +317,6 @@ export class PMRole {
     }
 
     try {
-      const wtInfo = await this.deps.worktrees.createWorktree(
-        issueNumber,
-        config.project.default_branch
-      );
-
       try {
         await this.deps.issues.markInProgress(issueNumber);
       } catch {
@@ -302,8 +331,7 @@ export class PMRole {
         project: projectName,
         issueNumber,
         repo: config.project.repo,
-        worktreePath: wtInfo.path,
-        branch: wtInfo.branch,
+        repoRoot: this.deps.projectRoot,
         ghToken,
       });
 
@@ -312,8 +340,8 @@ export class PMRole {
         role: "developer",
         issue_number: issueNumber,
         tmux_session: sessionName,
-        worktree_path: wtInfo.path,
-        worktree_branch: wtInfo.branch,
+        worktree_path: this.deps.worktrees.claudeWorktreePath(issueNumber),
+        worktree_branch: null as any, // Branch is unknown until Claude creates it
         started_at: new Date().toISOString(),
       });
 

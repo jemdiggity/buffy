@@ -76,10 +76,6 @@ max_prs_awaiting_human = 3
 [dashboard]
 port = 3000
 
-[worktrees]
-directory = "../.buffy-worktrees"
-cleanup_stale_hours = 24
-
 [night_shift]
 enabled = false
 start_hour = 1

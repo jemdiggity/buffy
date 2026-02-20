@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TmuxManager } from "../tmux/session.js";
@@ -10,8 +10,7 @@ export interface DeveloperSpawnOptions {
   project: string;
   issueNumber: number;
   repo: string;
-  worktreePath: string;
-  branch: string;
+  repoRoot: string;
   ghToken?: string;
   prTitlePrefix?: string;
 }
@@ -35,7 +34,6 @@ export class DeveloperRole {
     return template
       .replaceAll("{{REPO}}", options.repo)
       .replaceAll("{{ISSUE_NUMBER}}", String(options.issueNumber))
-      .replaceAll("{{BRANCH}}", options.branch)
       .replaceAll("{{PR_TITLE_PREFIX}}", options.prTitlePrefix ?? "");
   }
 
@@ -43,37 +41,22 @@ export class DeveloperRole {
     const sessionName = devSessionName(options.project, options.issueNumber);
     const prompt = this.buildPrompt(options);
 
-    // Write prompt to a temp file to avoid shell escaping issues with backticks/quotes
-    const promptDir = join(options.worktreePath, ".buffy");
-    mkdirSync(promptDir, { recursive: true });
-    const promptFile = join(promptDir, "prompt.md");
-    writeFileSync(promptFile, prompt);
-
     const env: Record<string, string> = {};
     if (options.ghToken) {
       env.GH_TOKEN = options.ghToken;
     }
 
+    // Use Claude Code's --worktree flag to create and manage the worktree.
+    // Worktree goes to <repo>/.claude/worktrees/issue-{N}.
+    // Claude handles cleanup on clean exit.
+    const worktreeName = `issue-${options.issueNumber}`;
+
     await this.tmux.createSession({
       name: sessionName,
-      cwd: options.worktreePath,
-      // Interactive mode (no -p flag) so the session is attachable via tmux.
-      // Permission prompts are visible and answerable if a human attaches.
-      // .claude/settings.json pre-approves common tools automatically.
-      //
-      // TODO: Consider these Claude Code flags to simplify the spawn flow:
-      //   --worktree, -w  — Claude creates its own worktree, removing the need
-      //     for WorktreeManager.createWorktree entirely. E.g. `claude -w issue-14`.
-      //     Worktrees go to <repo>/.claude/worktrees/<name>.
-      //   --permission-prompt-tool — handle permission prompts via MCP tool
-      //     instead of autoAcceptTrust + acceptEdits. Enables -p mode.
-      //   --from-pr <number> — resume context from a PR (useful for revisions).
-      command: `claude --permission-mode acceptEdits "$(cat ${promptFile})"`,
+      cwd: options.repoRoot,
+      command: `claude -w ${worktreeName} --permission-mode acceptEdits ${this.shellEscape(prompt)}`,
       env,
     });
-
-    // Auto-accept the workspace trust prompt (defaults to "Yes, I trust this folder")
-    await this.tmux.autoAcceptTrust(sessionName);
 
     return sessionName;
   }
@@ -87,6 +70,11 @@ export class DeveloperRole {
     return devSessionName(project, issueNumber);
   }
 
+  private shellEscape(s: string): string {
+    // Use single quotes with internal single quotes escaped as '\''
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+
   private fallbackTemplate(): string {
     return `You are a developer working on the {{REPO}} repository. Your task is to solve GitHub issue #{{ISSUE_NUMBER}}.
 
@@ -94,17 +82,18 @@ export class DeveloperRole {
 
 1. Read the issue details: \`gh issue view {{ISSUE_NUMBER}}\`
 2. Understand the full context of the issue before writing any code
-3. Create your implementation, following the project's coding conventions
-4. Run the project's test suite and fix any failures
-5. When your work is complete and tests pass, open a draft PR:
+3. Create a feature branch for your work (e.g. \`git checkout -b fix/issue-{{ISSUE_NUMBER}}\`)
+4. Create your implementation, following the project's coding conventions
+5. Run the project's test suite and fix any failures
+6. Push your commits: \`git push -u origin HEAD\`
+7. When your work is complete and tests pass, open a draft PR:
    \`\`\`sh
    gh pr create --draft --title "{{PR_TITLE_PREFIX}}fix: <concise description>" --body "Closes #{{ISSUE_NUMBER}}\\n\\n<summary of changes>" --label "needs-cto-review"
    \`\`\`
 
 ## Rules
 
-- You are already on branch \`{{BRANCH}}\` in a git worktree — do NOT create or checkout a different branch
-- Push your commits to this branch: \`git push -u origin {{BRANCH}}\`
+- You are in a git worktree — create your own feature branch before starting work
 - Follow the existing code style and patterns
 - Do not modify unrelated code
 - If you encounter a blocker, open the PR with what you have and add the label \`needs-help\`

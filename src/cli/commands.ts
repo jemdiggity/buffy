@@ -53,7 +53,7 @@ export async function stopAll(projectRoot: string, clean: boolean): Promise<void
   console.log(`Stopped ${killed} session(s)`);
 
   if (clean) {
-    const worktrees = new WorktreeManager(projectRoot, config.project.worktrees.directory);
+    const worktrees = new WorktreeManager(projectRoot);
     const removed = await worktrees.removeAll();
     console.log(`Removed ${removed} worktree(s)`);
   }

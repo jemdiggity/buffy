@@ -60,13 +60,12 @@ function createMockDeps(overrides?: Partial<PMDependencies>): PMDependencies {
       isSessionAlive: vi.fn().mockResolvedValue(false),
     } as any,
     worktrees: {
-      createWorktree: vi.fn().mockResolvedValue({ path: "/tmp/wt", branch: "buffy/issue-1", issueNumber: 1 }),
+      claudeWorktreePath: vi.fn((n: number) => `/tmp/repo/.claude/worktrees/issue-${n}`),
+      discoverBranch: vi.fn().mockResolvedValue(null),
       removeWorktree: vi.fn().mockResolvedValue(undefined),
       listWorktrees: vi.fn().mockResolvedValue([]),
       worktreeExists: vi.fn().mockResolvedValue(false),
       removeAll: vi.fn().mockResolvedValue(0),
-      branchName: vi.fn((n: number) => `buffy/issue-${n}`),
-      worktreePath: vi.fn((n: number) => `/tmp/wt/issue-${n}`),
     } as any,
     prs: {
       listByLabel: vi.fn().mockResolvedValue([]),
@@ -119,7 +118,7 @@ describe("PMRole", () => {
     await new Promise((r) => setTimeout(r, 100));
     pm.stop();
 
-    expect(deps.worktrees.createWorktree).toHaveBeenCalledWith(42, "main");
+    // No longer calls createWorktree — Claude Code handles worktree via -w flag
     expect(deps.developer.spawn).toHaveBeenCalled();
   });
 
@@ -135,7 +134,6 @@ describe("PMRole", () => {
     await new Promise((r) => setTimeout(r, 100));
     pm.stop();
 
-    expect(deps.worktrees.createWorktree).not.toHaveBeenCalled();
     expect(deps.developer.spawn).not.toHaveBeenCalled();
   });
 
@@ -180,8 +178,8 @@ describe("PMRole", () => {
       role: "developer",
       issue_number: 42,
       tmux_session: "buffy-test-project-dev-42",
-      worktree_path: "/tmp/wt/issue-42",
-      worktree_branch: "buffy/issue-42",
+      worktree_path: "/tmp/repo/.claude/worktrees/issue-42",
+      worktree_branch: "fix/issue-42",
       started_at: new Date().toISOString(),
     });
 
@@ -195,7 +193,7 @@ describe("PMRole", () => {
       state: "OPEN",
       draft: true,
       labels: ["needs-cto-review"],
-      headBranch: "buffy/issue-42",
+      headBranch: "fix/issue-42",
       url: "https://github.com/owner/test-project/pull/10",
       author: "buffy",
     });
@@ -212,8 +210,8 @@ describe("PMRole", () => {
 
     // Worktree should be cleaned up
     expect(deps.worktrees.removeWorktree).toHaveBeenCalledWith({
-      path: "/tmp/wt/issue-42",
-      branch: "buffy/issue-42",
+      path: "/tmp/repo/.claude/worktrees/issue-42",
+      branch: "fix/issue-42",
       issueNumber: 42,
     });
 
@@ -221,26 +219,56 @@ describe("PMRole", () => {
     expect(deps.issues.removeLabel).toHaveBeenCalledWith(42, "in-progress");
   });
 
-  it("skips issues that already have a buffy PR open", async () => {
+  it("discovers branch from worktree when not yet known", async () => {
+    const deps = createMockDeps();
+    deps.hr.recordSessionStart({
+      project: "test-project",
+      role: "developer",
+      issue_number: 42,
+      tmux_session: "buffy-test-project-dev-42",
+      worktree_path: "/tmp/repo/.claude/worktrees/issue-42",
+      // worktree_branch is null — not yet discovered
+      started_at: new Date().toISOString(),
+    });
+
+    // Session is alive
+    (deps.tmux.isSessionAlive as any).mockResolvedValue(true);
+
+    // discoverBranch returns the branch Claude created
+    (deps.worktrees.discoverBranch as any).mockResolvedValue("fix/issue-42");
+
+    // PR exists for the discovered branch
+    (deps.prs.findByBranch as any).mockResolvedValue({
+      number: 10,
+      title: "Fix bug",
+      state: "OPEN",
+      headBranch: "fix/issue-42",
+    });
+
+    const pm = new PMRole(deps);
+    await pm.runCycle();
+
+    // Should have discovered the branch
+    expect(deps.worktrees.discoverBranch).toHaveBeenCalledWith("/tmp/repo/.claude/worktrees/issue-42");
+
+    // Session should be killed (PR was found)
+    expect(deps.tmux.killSession).toHaveBeenCalledWith("buffy-test-project-dev-42");
+  });
+
+  it("skips issues that already have a worktree on disk", async () => {
     const deps = createMockDeps();
     (deps.issues.fetchReadyIssues as any).mockResolvedValue([
       { number: 42, title: "Fix bug", labels: ["ready"], state: "open", url: "", assignees: [], createdAt: "2024-01-01" },
     ]);
     (deps.issues.prioritize as any).mockImplementation((issues: any[]) => issues);
 
-    // PR already exists for this issue's branch
-    (deps.prs.findByBranch as any).mockResolvedValue({
-      number: 10,
-      title: "Fix bug",
-      state: "OPEN",
-      headBranch: "buffy/issue-42",
-    });
+    // Worktree exists on disk
+    (deps.worktrees.worktreeExists as any).mockResolvedValue(true);
 
     const pm = new PMRole(deps);
     await pm.runCycle();
 
     // Should NOT spawn a developer
-    expect(deps.worktrees.createWorktree).not.toHaveBeenCalled();
     expect(deps.developer.spawn).not.toHaveBeenCalled();
   });
 
@@ -251,8 +279,8 @@ describe("PMRole", () => {
       role: "developer",
       issue_number: 42,
       tmux_session: "buffy-test-project-dev-42",
-      worktree_path: "/tmp/wt/issue-42",
-      worktree_branch: "buffy/issue-42",
+      worktree_path: "/tmp/repo/.claude/worktrees/issue-42",
+      worktree_branch: "fix/issue-42",
       started_at: new Date().toISOString(),
     });
 

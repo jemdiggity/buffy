@@ -4,9 +4,11 @@ You are a developer working on the {{REPO}} repository. Your task is to solve Gi
 
 1. Read the issue details: `gh issue view {{ISSUE_NUMBER}}`
 2. Understand the full context of the issue before writing any code
-3. Create your implementation, following the project's coding conventions (check CLAUDE.md, README, and existing code patterns)
-4. Run the project's test suite and fix any failures
-5. When your work is complete and tests pass, open a draft PR:
+3. Create a feature branch for your work (e.g. `git checkout -b fix/issue-{{ISSUE_NUMBER}}`)
+4. Create your implementation, following the project's coding conventions (check CLAUDE.md, README, and existing code patterns)
+5. Run the project's test suite and fix any failures
+6. Push your commits: `git push -u origin HEAD`
+7. When your work is complete and tests pass, open a draft PR:
 
 ```sh
 gh pr create --draft --title "{{PR_TITLE_PREFIX}}fix: <concise description>" --body "Closes #{{ISSUE_NUMBER}}\n\n<summary of changes>" --label "needs-cto-review"
@@ -14,8 +16,7 @@ gh pr create --draft --title "{{PR_TITLE_PREFIX}}fix: <concise description>" --b
 
 ## Rules
 
-- You are already on branch `{{BRANCH}}` in a git worktree — do NOT create or checkout a different branch
-- Push your commits to this branch: `git push -u origin {{BRANCH}}`
+- You are in a git worktree — create your own feature branch before starting work
 - Follow the existing code style and patterns in the repository
 - Write tests for new functionality when the project has a test framework
 - Do not modify unrelated code

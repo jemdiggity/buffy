@@ -70,7 +70,7 @@ async function main() {
 
   const bus = new CommsBus(projectDb);
   const tmux = new TmuxManager();
-  const worktrees = new WorktreeManager(projectRoot, config.project.worktrees.directory);
+  const worktrees = new WorktreeManager(projectRoot);
 
   const ghToken = config.project.project.gh_token_env
     ? process.env[config.project.project.gh_token_env]

@@ -31,11 +31,6 @@ export interface DashboardSection {
   port: number;
 }
 
-export interface WorktreesSection {
-  directory: string;
-  cleanup_stale_hours: number;
-}
-
 export interface NightShiftSection {
   enabled: boolean;
   start_hour: number;
@@ -50,7 +45,6 @@ export interface ProjectConfig {
   hr: HRSection;
   backpressure: BackpressureSection;
   dashboard: DashboardSection;
-  worktrees: WorktreesSection;
   night_shift: NightShiftSection;
 }
 

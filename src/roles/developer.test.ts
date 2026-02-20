@@ -10,13 +10,11 @@ describe("DeveloperRole", () => {
         project: "myapp",
         issueNumber: 42,
         repo: "owner/myapp",
-        worktreePath: "/tmp/worktree",
-        branch: "buffy/issue-42",
+        repoRoot: "/tmp/repo",
       });
       expect(prompt).toContain("owner/myapp");
       expect(prompt).toContain("#42");
       expect(prompt).toContain("gh issue view 42");
-      expect(prompt).toContain("buffy/issue-42");
     });
 
     it("includes PR title prefix when provided", () => {
@@ -24,11 +22,30 @@ describe("DeveloperRole", () => {
         project: "myapp",
         issueNumber: 42,
         repo: "owner/myapp",
-        worktreePath: "/tmp/worktree",
-        branch: "buffy/issue-42",
+        repoRoot: "/tmp/repo",
         prTitlePrefix: "[buffy] ",
       });
       expect(prompt).toContain("[buffy] fix:");
+    });
+
+    it("does not contain branch template variable", () => {
+      const prompt = dev.buildPrompt({
+        project: "myapp",
+        issueNumber: 42,
+        repo: "owner/myapp",
+        repoRoot: "/tmp/repo",
+      });
+      expect(prompt).not.toContain("{{BRANCH}}");
+    });
+
+    it("tells developer to create a feature branch", () => {
+      const prompt = dev.buildPrompt({
+        project: "myapp",
+        issueNumber: 42,
+        repo: "owner/myapp",
+        repoRoot: "/tmp/repo",
+      });
+      expect(prompt).toContain("Create a feature branch");
     });
   });
 
