@@ -71,15 +71,22 @@ Do NOT create a new PR — push to the existing branch.`;
       env.GH_TOKEN = options.ghToken;
     }
 
-    // Use Claude Code's --worktree flag to create and manage the worktree.
-    // Worktree goes to <repo>/.claude/worktrees/issue-{N}.
-    // Claude handles cleanup on clean exit.
-    const worktreeName = `issue-${options.issueNumber}`;
+    let command: string;
+    if (options.prNumber) {
+      // Revision: skip -w flag. The developer will `gh pr checkout` to get
+      // the existing PR branch. Using -w would create a fresh worktree on
+      // main which conflicts with the revision flow.
+      command = `claude --permission-mode acceptEdits ${this.shellEscape(prompt)}`;
+    } else {
+      // New work: use -w to create an isolated worktree.
+      const worktreeName = `issue-${options.issueNumber}`;
+      command = `claude -w ${worktreeName} --permission-mode acceptEdits ${this.shellEscape(prompt)}`;
+    }
 
     await this.tmux.createSession({
       name: sessionName,
       cwd: options.repoRoot,
-      command: `claude -w ${worktreeName} --permission-mode acceptEdits ${this.shellEscape(prompt)}`,
+      command,
       env,
     });
 
