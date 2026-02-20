@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { PMRole } from "../roles/pm.js";
 import type { HRManager } from "../hr/index.js";
 import type { TmuxManager } from "../tmux/index.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
 import type { NightShiftScheduler } from "../nightshift/index.js";
+
+// Embed static files at build time so they work in compiled binaries
+import indexHtml from "./public/index.html" with { type: "text" };
+import terminalHtml from "./public/terminal.html" with { type: "text" };
+import styleCss from "./public/style.css" with { type: "text" };
+import appJs from "./public/app.js" with { type: "text" };
 
 export interface DashboardOptions {
   port: number;
@@ -23,7 +23,6 @@ export interface DashboardOptions {
 export function startDashboard(options: DashboardOptions): { close: () => void } {
   const { port, pm, hr, tmux, projectName, nightShift } = options;
   const app = new Hono();
-  const publicDir = join(__dirname, "public");
 
   // API: status
   app.get("/api/status", async (c) => {
@@ -65,22 +64,17 @@ export function startDashboard(options: DashboardOptions): { close: () => void }
     }
   });
 
-  // Static files
-  const serveFile = (filename: string, contentType: string) => {
-    return (c: any) => {
-      try {
-        const content = readFileSync(join(publicDir, filename), "utf-8");
-        return c.body(content, 200, { "Content-Type": contentType });
-      } catch {
-        return c.text("Not found", 404);
-      }
-    };
+  // Static files (embedded at build time)
+  const staticFiles: Record<string, { content: string; contentType: string }> = {
+    "/": { content: indexHtml, contentType: "text/html" },
+    "/terminal": { content: terminalHtml, contentType: "text/html" },
+    "/style.css": { content: styleCss, contentType: "text/css" },
+    "/app.js": { content: appJs, contentType: "application/javascript" },
   };
 
-  app.get("/", serveFile("index.html", "text/html"));
-  app.get("/terminal", serveFile("terminal.html", "text/html"));
-  app.get("/style.css", serveFile("style.css", "text/css"));
-  app.get("/app.js", serveFile("app.js", "application/javascript"));
+  for (const [path, { content, contentType }] of Object.entries(staticFiles)) {
+    app.get(path, (c) => c.body(content, 200, { "Content-Type": contentType }));
+  }
 
   const server = serve({ fetch: app.fetch, port });
 
